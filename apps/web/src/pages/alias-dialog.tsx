@@ -1,4 +1,5 @@
 import { createModal } from "@buiducnhat/better-modal";
+import { ArrowDownIcon, ArrowUpIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
@@ -8,6 +9,7 @@ import { FormField } from "@/components/form-field";
 import { ModalDialog } from "@/components/modal-dialog";
 import { ModelInput } from "@/components/model-input";
 import { OptionSelect } from "@/components/option-select";
+import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -59,6 +61,7 @@ function AliasForm({
         <Input
           required
           autoFocus={alias === null}
+          className="font-mono"
           readOnly={alias !== null}
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -70,8 +73,13 @@ function AliasForm({
           Targets (tried in this order)
         </legend>
         {targets.map((t, i) => (
-          <div key={i} className="grid grid-cols-[1.5rem_1fr_1.4fr_auto] items-center gap-2">
-            <span className="text-center text-muted-foreground tabular-nums">{i + 1}</span>
+          <div
+            key={i}
+            className="grid grid-cols-[5rem_1fr_1.4fr_auto] items-center gap-2 rounded-lg border border-border bg-muted/30 p-2"
+          >
+            <StatusBadge tone={i === 0 ? "accent" : "neutral"}>
+              {i === 0 ? "primary" : `fallback ${i}`}
+            </StatusBadge>
             <OptionSelect
               aria-label={`Target ${i + 1} provider`}
               value={t.provider}
@@ -93,47 +101,49 @@ function AliasForm({
             <div className="flex gap-1">
               <Button
                 type="button"
-                size="sm"
+                size="icon-sm"
                 variant="ghost"
                 aria-label={`Move target ${i + 1} up`}
                 disabled={i === 0}
                 onClick={() => move(i, -1)}
               >
-                ↑
+                <ArrowUpIcon />
               </Button>
               <Button
                 type="button"
-                size="sm"
+                size="icon-sm"
                 variant="ghost"
                 aria-label={`Move target ${i + 1} down`}
                 disabled={i === targets.length - 1}
                 onClick={() => move(i, 1)}
               >
-                ↓
+                <ArrowDownIcon />
               </Button>
               <Button
                 type="button"
-                size="sm"
+                size="icon-sm"
                 variant="ghost"
+                className="text-destructive hover:text-destructive"
                 aria-label={`Remove target ${i + 1}`}
                 disabled={targets.length === 1}
                 onClick={() => setTargets((l) => l.filter((_, j) => j !== i))}
               >
-                ✕
+                <Trash2Icon />
               </Button>
             </div>
           </div>
         ))}
-        <div>
+        <div className="flex justify-center">
           <Button
             type="button"
             size="sm"
-            variant="outline"
+            variant="ghost"
             disabled={targets.length >= 20}
             onClick={() =>
               setTargets((l) => [...l, { provider: providers[0]?.id ?? "", model: "" }])
             }
           >
+            <PlusIcon data-icon="inline-start" />
             Add fallback target
           </Button>
         </div>

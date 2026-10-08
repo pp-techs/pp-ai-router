@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { CoinsIcon, SearchIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api } from "@/api/client";
 import { ApiError } from "@/api/http";
@@ -30,7 +31,7 @@ function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
 
   return (
     <div className="border-b border-border">
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3 p-4">
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-3 bg-muted/30 p-4">
         <FormField
           label="Look up the price billing uses for a model (overrides included)"
           className="min-w-64 flex-1"
@@ -42,6 +43,7 @@ function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
           />
         </FormField>
         <Button type="submit" variant="outline" disabled={text.trim() === ""}>
+          <SearchIcon data-icon="inline-start" />
           Look up
         </Button>
       </form>
@@ -82,7 +84,11 @@ export function PriceSearchCard({ onOverride }: { onOverride: (price: Price) => 
   });
 
   return (
-    <Panel title="Fetched prices" flush>
+    <Panel
+      title="Fetched prices"
+      description="Prices synced from upstream catalogs; override any of them."
+      flush
+    >
       <Lookup onOverride={onOverride} />
       <div className="border-b border-border p-4">
         <FormField label="Search models">
@@ -98,7 +104,10 @@ export function PriceSearchCard({ onOverride }: { onOverride: (price: Price) => 
         query={prices}
         isEmpty={(list) => list.length === 0}
         empty={
-          <EmptyState title={q ? `No models match “${q}”` : "No prices fetched yet"}>
+          <EmptyState
+            icon={CoinsIcon}
+            title={q ? `No models match “${q}”` : "No prices fetched yet"}
+          >
             {!q && "Run a sync to download the LiteLLM and OpenRouter price lists."}
           </EmptyState>
         }

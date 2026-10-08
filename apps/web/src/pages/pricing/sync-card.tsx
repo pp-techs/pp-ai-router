@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { CoinsIcon, RefreshCwIcon } from "lucide-react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { PricingSyncResult } from "@/api/types";
@@ -39,22 +40,29 @@ export function PricingSyncCard() {
       (results.some((r) => r.status === "error") ? toast.error : toast.success)(describe(results)),
   });
 
+  const syncButton = (
+    <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>
+      {sync.isPending ? (
+        <Spinner data-icon="inline-start" />
+      ) : (
+        <RefreshCwIcon data-icon="inline-start" />
+      )}
+      Sync now
+    </Button>
+  );
+
   return (
     <Panel
       title="Price sources"
+      description="Upstream pricing catalogs and when each was last refreshed."
       flush
-      actions={
-        <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>
-          {sync.isPending && <Spinner data-icon="inline-start" />}
-          Sync now
-        </Button>
-      }
+      actions={syncButton}
     >
       <QueryBoundary
         query={states}
         isEmpty={(list) => list.length === 0}
         empty={
-          <EmptyState title="Never synced">
+          <EmptyState icon={CoinsIcon} title="Never synced">
             Automatic sync may be disabled. Use “Sync now” to fetch prices.
           </EmptyState>
         }
@@ -82,11 +90,15 @@ export function PricingSyncCard() {
                   <TableCell className="whitespace-normal">
                     {s.last_error ? (
                       <>
-                        <StatusBadge tone="danger">error</StatusBadge>
+                        <StatusBadge dot tone="danger">
+                          error
+                        </StatusBadge>
                         <p className="mt-1 text-xs break-words text-destructive">{s.last_error}</p>
                       </>
                     ) : (
-                      <StatusBadge tone="ok">ok</StatusBadge>
+                      <StatusBadge dot tone="ok">
+                        ok
+                      </StatusBadge>
                     )}
                   </TableCell>
                 </TableRow>

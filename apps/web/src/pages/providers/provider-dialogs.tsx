@@ -24,7 +24,12 @@ type CreateProps = Record<string, unknown>;
 export const CreateProviderModal = createModal<CreateProps, boolean>(
   "create-provider",
   ({ modal }) => (
-    <ModalDialog modal={modal} dismissed={false} title="Add provider">
+    <ModalDialog
+      modal={modal}
+      dismissed={false}
+      title="Add provider"
+      description="Connect an upstream endpoint. Credentials are added after it is created."
+    >
       <CreateProviderForm
         onDone={() => modal.resolve(true)}
         onCancel={() => modal.resolve(false)}

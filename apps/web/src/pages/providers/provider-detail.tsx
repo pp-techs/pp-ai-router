@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { KeyRoundIcon, LogInIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Provider } from "@/api/types";
@@ -8,6 +9,7 @@ import { ConfirmModal } from "@/components/confirm-modal";
 import { PageHeader, Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
 import { StatusBadge } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { AliasModal } from "../alias-dialog";
@@ -21,8 +23,8 @@ import { QuotaCard } from "./quota-card";
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 break-all">{children}</dd>
+      <dt className="mb-1 text-xs font-medium text-muted-foreground">{label}</dt>
+      <dd className="break-all">{children}</dd>
     </div>
   );
 }
@@ -34,12 +36,6 @@ export function ProviderDetailPage() {
 
   return (
     <>
-      <Link
-        to="/providers"
-        className="mb-3 inline-block text-muted-foreground hover:text-foreground"
-      >
-        ← Providers
-      </Link>
       <QueryBoundary
         query={providers}
         isEmpty={() => provider === undefined}
@@ -76,7 +72,8 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
   return (
     <>
       <PageHeader
-        title={provider.id}
+        title={<span className="font-mono">{provider.id}</span>}
+        breadcrumbs={[{ label: "Providers", to: "/providers" }, { label: provider.id }]}
         description={type?.label ?? provider.type}
         actions={
           <>
@@ -108,14 +105,18 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
       <Panel className="mb-6">
         <dl className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <Detail label="Status">
-            <StatusBadge tone={provider.enabled ? "ok" : "neutral"}>
+            <StatusBadge dot tone={provider.enabled ? "ok" : "neutral"}>
               {provider.enabled ? "enabled" : "disabled"}
             </StatusBadge>
           </Detail>
           <Detail label="Base URL">
             <span className="font-mono text-xs">{provider.base_url}</span>
           </Detail>
-          <Detail label="Strategy">{provider.key_strategy}</Detail>
+          <Detail label="Strategy">
+            <Badge variant="outline" className="font-mono">
+              {provider.key_strategy}
+            </Badge>
+          </Detail>
           <Detail label="Sticky TTL">
             {provider.sticky_ttl_sec === 0 ? "off" : `${provider.sticky_ttl_sec}s`}
           </Detail>
@@ -139,6 +140,7 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
                   })
                 }
               >
+                <LogInIcon data-icon="inline-start" />
                 {type?.oauth?.label ?? "Sign in with account"}
               </Button>
             )}
@@ -146,6 +148,7 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
               size="sm"
               onClick={() => void AddCredentialModal.show({ providerId: provider.id })}
             >
+              <PlusIcon data-icon="inline-start" />
               Add API key
             </Button>
           </>
@@ -155,7 +158,16 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
           query={credentials}
           isEmpty={(list) => list.length === 0}
           empty={
-            <EmptyState title="No credentials">
+            <EmptyState
+              title="No credentials"
+              icon={KeyRoundIcon}
+              action={
+                <Button onClick={() => void AddCredentialModal.show({ providerId: provider.id })}>
+                  <PlusIcon data-icon="inline-start" />
+                  Add API key
+                </Button>
+              }
+            >
               This provider cannot serve requests until it has at least one.
             </EmptyState>
           }

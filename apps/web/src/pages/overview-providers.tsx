@@ -1,4 +1,5 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { ServerIcon } from "lucide-react";
 import { Link } from "react-router";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
@@ -33,8 +34,9 @@ export function ProviderHealthCard() {
   return (
     <Panel
       title="Provider health"
+      description="Circuit breaker and upstream availability."
       actions={
-        <Link to="/providers" className="text-primary hover:underline">
+        <Link to="/providers" className="text-sm font-medium text-primary hover:underline">
           Manage
         </Link>
       }
@@ -42,15 +44,19 @@ export function ProviderHealthCard() {
       <QueryBoundary
         query={providers}
         isEmpty={(list) => list.length === 0}
-        empty={<EmptyState title="No providers yet">Add one on the Providers page.</EmptyState>}
+        empty={
+          <EmptyState icon={ServerIcon} title="No providers yet">
+            Add one on the Providers page.
+          </EmptyState>
+        }
       >
         {(list) => (
-          <ul className="grid gap-3">
+          <ul className="-my-3 divide-y">
             {list.map((p, i) => {
               const creds = credentials[i]?.data;
               const health = creds && summarizeHealth(p.enabled, creds, now);
               return (
-                <li key={p.id} className="flex items-start justify-between gap-3">
+                <li key={p.id} className="flex items-start justify-between gap-3 py-3">
                   <div>
                     <Link
                       to={`/providers/${encodeURIComponent(p.id)}`}
@@ -64,7 +70,11 @@ export function ProviderHealthCard() {
                         : `${p.credentials} credentials`}
                     </p>
                   </div>
-                  {health && <StatusBadge tone={TONE[health.state]}>{health.state}</StatusBadge>}
+                  {health && (
+                    <StatusBadge dot tone={TONE[health.state]}>
+                      {health.state}
+                    </StatusBadge>
+                  )}
                 </li>
               );
             })}

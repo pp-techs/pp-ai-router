@@ -1,10 +1,11 @@
-import { XIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Limit, VirtualKey } from "@/api/types";
 import { ProgressBar } from "@/components/progress";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { formatDateTime, formatDuration, formatMetric } from "@/lib/format";
 import { formatList } from "@/lib/input";
@@ -25,7 +26,7 @@ function LimitRow({ limit, now }: { limit: Limit; now: number }) {
   const title = `${METRIC_LABELS[limit.metric]} / ${limit.window} / ${limit.mode}`;
 
   return (
-    <li className="grid gap-1">
+    <li className="grid gap-2 rounded-lg border border-border bg-muted/40 p-3">
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium">{title}</span>
         <span className="flex items-center gap-2 tabular-nums">
@@ -63,62 +64,75 @@ export function KeyCard({
   });
   const now = Date.now();
   const expired = apiKey.expires_at !== null && apiKey.expires_at <= now;
+  const limitReached = apiKey.limits.some((l) => usedFraction(l.used, l.max) >= 1);
 
   return (
-    <article className="rounded-xl border border-border bg-card">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="flex flex-wrap items-center gap-2 font-semibold">
-            {apiKey.name}
-            {expired ? (
-              <StatusBadge tone="danger">expired</StatusBadge>
-            ) : (
-              <StatusBadge tone={apiKey.enabled ? "ok" : "neutral"}>
-                {apiKey.enabled ? "enabled" : "disabled"}
-              </StatusBadge>
-            )}
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            <code className="font-mono">{apiKey.prefix}…</code> · created{" "}
-            {formatDateTime(apiKey.created_at)}
-            {apiKey.expires_at !== null && <> · expires {formatDateTime(apiKey.expires_at)}</>}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Models:{" "}
+    <Card>
+      <CardHeader className="border-b">
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          <h2>{apiKey.name}</h2>
+          {expired ? (
+            <StatusBadge tone="danger">expired</StatusBadge>
+          ) : (
+            <StatusBadge tone={apiKey.enabled ? "ok" : "neutral"} dot={apiKey.enabled}>
+              {apiKey.enabled ? "enabled" : "disabled"}
+            </StatusBadge>
+          )}
+          {limitReached && <StatusBadge tone="danger">limit reached</StatusBadge>}
+        </CardTitle>
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <code className="font-mono">{apiKey.prefix}…</code>
+          <span aria-hidden>·</span>
+          <span>
+            Allowed models:{" "}
             <span className="font-mono">
               {apiKey.allowed_models ? formatList(apiKey.allowed_models) : "any"}
             </span>
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={onAddLimit}>
-            Add limit
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={toggle.isPending}
-            onClick={() => toggle.mutate()}
-          >
-            {toggle.isPending && <Spinner data-icon="inline-start" />}
-            {apiKey.enabled ? "Disable" : "Enable"}
-          </Button>
-          <Button size="sm" variant="destructive" onClick={onDelete}>
-            Delete
-          </Button>
-        </div>
-      </header>
-      <div className="px-4 py-3">
+          </span>
+          <span aria-hidden>·</span>
+          <span>
+            {apiKey.expires_at !== null
+              ? `${expired ? "Expired" : "Expires"} ${formatDateTime(apiKey.expires_at)}`
+              : "Never expires"}
+          </span>
+          <span aria-hidden>·</span>
+          <span>Created {formatDateTime(apiKey.created_at)}</span>
+        </p>
+      </CardHeader>
+      <CardContent className="grid gap-3">
         {apiKey.limits.length === 0 ? (
           <p className="text-muted-foreground">No limits: this key is unrestricted.</p>
         ) : (
-          <ul className="grid gap-4">
-            {apiKey.limits.map((limit) => (
-              <LimitRow key={limit.id} limit={limit} now={now} />
-            ))}
-          </ul>
+          <>
+            <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Spend & rate limits
+            </h3>
+            <ul className="grid gap-3">
+              {apiKey.limits.map((limit) => (
+                <LimitRow key={limit.id} limit={limit} now={now} />
+              ))}
+            </ul>
+          </>
         )}
-      </div>
-    </article>
+      </CardContent>
+      <CardFooter className="gap-2">
+        <Button size="sm" variant="outline" onClick={onAddLimit}>
+          <PlusIcon data-icon="inline-start" />
+          Add limit
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={toggle.isPending}
+          onClick={() => toggle.mutate()}
+        >
+          {toggle.isPending && <Spinner data-icon="inline-start" />}
+          {apiKey.enabled ? "Disable" : "Enable"}
+        </Button>
+        <Button size="sm" variant="destructive" className="ml-auto" onClick={onDelete}>
+          Delete
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

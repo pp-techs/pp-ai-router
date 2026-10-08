@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { GaugeIcon, RefreshCwIcon } from "lucide-react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { AccountQuota, Provider, QuotaWindow } from "@/api/types";
@@ -43,7 +44,7 @@ function AccountRow({ row }: { row: AccountQuota }) {
           )}
         </div>
         {quota?.exhausted && (
-          <StatusBadge tone="danger">
+          <StatusBadge dot tone="danger">
             {quota.resets_at === null
               ? "Exhausted · parked"
               : `Exhausted until ${formatDateTime(quota.resets_at)}`}
@@ -86,7 +87,11 @@ export function QuotaCard({ provider }: { provider: Provider }) {
       flush
       actions={
         <Button size="sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-          {refresh.isPending && <Spinner data-icon="inline-start" />}
+          {refresh.isPending ? (
+            <Spinner data-icon="inline-start" />
+          ) : (
+            <RefreshCwIcon data-icon="inline-start" />
+          )}
           Refresh
         </Button>
       }
@@ -95,7 +100,7 @@ export function QuotaCard({ provider }: { provider: Provider }) {
         query={quota}
         isEmpty={(report) => !report.supported || report.data.length === 0}
         empty={
-          <EmptyState title="No quota to show">
+          <EmptyState title="No quota to show" icon={GaugeIcon}>
             {provider.credentials === 0
               ? "Add a credential to see its quota."
               : "This provider did not report quota for any credential."}

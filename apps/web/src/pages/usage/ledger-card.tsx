@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ScrollTextIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
@@ -46,7 +47,7 @@ function EventRow({ event, keyName }: { event: UsageEvent; keyName: string }) {
     <TableRow>
       <TableCell className="text-xs whitespace-nowrap">{formatDateTime(event.ts)}</TableCell>
       <TableCell>{keyName}</TableCell>
-      <TableCell>{event.provider_id}</TableCell>
+      <TableCell className="font-mono text-xs">{event.provider_id}</TableCell>
       <TableCell className="min-w-36 font-mono text-xs break-all">
         {event.model}
         {event.upstream_model !== event.model && (
@@ -56,9 +57,7 @@ function EventRow({ event, keyName }: { event: UsageEvent; keyName: string }) {
       <TableCell className="text-right whitespace-nowrap tabular-nums">
         {formatInt(event.input_tokens)} in · {formatInt(event.output_tokens)} out
         {event.cached_tokens > 0 && (
-          <p className="text-xs text-muted-foreground-foreground">
-            {formatInt(event.cached_tokens)} cached
-          </p>
+          <p className="text-xs text-muted-foreground">{formatInt(event.cached_tokens)} cached</p>
         )}
       </TableCell>
       <TableCell className="text-right whitespace-nowrap tabular-nums">
@@ -70,8 +69,10 @@ function EventRow({ event, keyName }: { event: UsageEvent; keyName: string }) {
         )}
       </TableCell>
       <TableCell>
-        <StatusBadge tone={STATUS_TONE[event.status]}>{event.status}</StatusBadge>
-        {event.stream === 1 && <p className="text-xs text-muted-foreground-foreground">stream</p>}
+        <StatusBadge dot tone={STATUS_TONE[event.status]}>
+          {event.status}
+        </StatusBadge>
+        {event.stream === 1 && <p className="text-xs text-muted-foreground">stream</p>}
       </TableCell>
       <TableCell className="text-right whitespace-nowrap tabular-nums">
         {formatLatency(event.latency_ms)}
@@ -118,8 +119,11 @@ export function UsageLedgerCard({
   const rows = events.data ?? [];
 
   return (
-    <Panel title="Ledger" flush>
-      <form onSubmit={apply} className="flex flex-wrap items-end gap-3 border-b border-border p-4">
+    <Panel title="Ledger" description="Request stream and per-call token breakdown." flush>
+      <form
+        onSubmit={apply}
+        className="flex flex-wrap items-end gap-3 border-b border-border bg-muted/30 p-4"
+      >
         <FormField label="API key" className="w-auto min-w-40">
           <OptionSelect
             value={draft.key_id}
@@ -159,7 +163,10 @@ export function UsageLedgerCard({
         query={events}
         isEmpty={(list) => list.length === 0}
         empty={
-          <EmptyState title={hasFilter ? "No events match these filters" : "No usage recorded yet"}>
+          <EmptyState
+            icon={ScrollTextIcon}
+            title={hasFilter ? "No events match these filters" : "No usage recorded yet"}
+          >
             {!hasFilter && "Requests sent through /v1 appear here."}
           </EmptyState>
         }
@@ -196,7 +203,7 @@ export function UsageLedgerCard({
         >
           ← Newer
         </Button>
-        <span className="text-xs text-muted-foreground-foreground">Page {cursors.length}</span>
+        <span className="text-xs text-muted-foreground">Page {cursors.length}</span>
         <Button
           variant="outline"
           size="sm"

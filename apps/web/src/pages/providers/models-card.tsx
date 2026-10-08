@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { TriangleAlertIcon } from "lucide-react";
+import { BoxesIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
@@ -80,11 +80,16 @@ export function ModelsCard({
             disabled
             title="This provider's models are built in; there is nothing to refresh."
           >
+            <RefreshCwIcon data-icon="inline-start" />
             Refresh
           </Button>
         ) : fetchable ? (
           <Button size="sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-            {refresh.isPending && <Spinner data-icon="inline-start" />}
+            {refresh.isPending ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RefreshCwIcon data-icon="inline-start" />
+            )}
             Refresh
           </Button>
         ) : null
@@ -121,7 +126,7 @@ export function ModelsCard({
             )}
           </div>
           {!list || list.data.length === 0 ? (
-            <EmptyState title="No models known">
+            <EmptyState title="No models known" icon={BoxesIcon}>
               {fetchable
                 ? provider.credentials === 0
                   ? "Add a credential, then refresh to fetch the list from the upstream."
@@ -129,7 +134,7 @@ export function ModelsCard({
                 : "This provider type does not list its models. You can still route to any provider/model id."}
             </EmptyState>
           ) : matches.length === 0 ? (
-            <EmptyState title={`No models match “${search.trim()}”`} />
+            <EmptyState title={`No models match “${search.trim()}”`} icon={SearchIcon} />
           ) : (
             <>
               <Table className="min-w-176">

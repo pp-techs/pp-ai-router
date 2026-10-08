@@ -1,7 +1,15 @@
 import type { UseQueryResult } from "@tanstack/react-query";
+import { InboxIcon, TriangleAlertIcon, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
 
 export function LoadingState({ label = "Loading…" }: { label?: string }) {
@@ -13,13 +21,28 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+export function EmptyState({
+  title,
+  icon: Icon = InboxIcon,
+  action,
+  children,
+}: {
+  title: string;
+  icon?: LucideIcon;
+  /** A call to action, usually a Button. */
+  action?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
     <Empty>
       <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <Icon />
+        </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         {children && <EmptyDescription>{children}</EmptyDescription>}
       </EmptyHeader>
+      {action && <EmptyContent>{action}</EmptyContent>}
     </Empty>
   );
 }
@@ -28,13 +51,18 @@ export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => v
   return (
     <Empty role="alert">
       <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <TriangleAlertIcon className="text-destructive" />
+        </EmptyMedia>
         <EmptyTitle className="text-destructive">Something went wrong</EmptyTitle>
         <EmptyDescription>{error.message}</EmptyDescription>
       </EmptyHeader>
       {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry}>
-          Try again
-        </Button>
+        <EmptyContent>
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Try again
+          </Button>
+        </EmptyContent>
       )}
     </Empty>
   );

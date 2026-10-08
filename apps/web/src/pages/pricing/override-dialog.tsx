@@ -66,6 +66,7 @@ function OverrideForm({
           required
           autoFocus={base?.source !== "override"}
           value={model}
+          className="font-mono"
           readOnly={base?.source === "override"}
           onChange={(e) => setModel(e.target.value)}
         />

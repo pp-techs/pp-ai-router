@@ -1,3 +1,10 @@
+import {
+  ActivityIcon,
+  ArrowDownToLineIcon,
+  ArrowUpFromLineIcon,
+  CircleDollarSignIcon,
+  ServerOffIcon,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
@@ -23,11 +30,24 @@ export function OverviewPage() {
       <PageHeader title="Overview" description="What the router served in the last 24 hours." />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Requests" value={totals ? formatInt(totals.requests) : "—"} />
-        <Stat label="Input tokens" value={totals ? formatInt(totals.input_tokens) : "—"} />
-        <Stat label="Output tokens" value={totals ? formatInt(totals.output_tokens) : "—"} />
+        <Stat
+          label="Requests"
+          icon={ActivityIcon}
+          value={totals ? formatInt(totals.requests) : "—"}
+        />
+        <Stat
+          label="Input tokens"
+          icon={ArrowDownToLineIcon}
+          value={totals ? formatInt(totals.input_tokens) : "—"}
+        />
+        <Stat
+          label="Output tokens"
+          icon={ArrowUpFromLineIcon}
+          value={totals ? formatInt(totals.output_tokens) : "—"}
+        />
         <Stat
           label="Cost"
+          icon={CircleDollarSignIcon}
           value={totals ? formatUsd(totals.cost_usd) : "—"}
           hint={
             totals && totals.unpriced_requests > 0
@@ -38,12 +58,12 @@ export function OverviewPage() {
       </div>
 
       <div className="grid gap-6">
-        <Panel title="Usage by model" flush>
+        <Panel title="Usage by model" description="Breakdown by routed upstream model." flush>
           <QueryBoundary
             query={summary}
             isEmpty={(s) => s.data.length === 0}
             empty={
-              <EmptyState title="No requests in the last 24 hours">
+              <EmptyState icon={ServerOffIcon} title="No requests in the last 24 hours">
                 Usage appears here once a client calls <code className="font-mono">/v1</code>.
               </EmptyState>
             }
