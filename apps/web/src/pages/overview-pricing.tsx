@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { TagsIcon } from "lucide-react";
-import { Link } from "react-router";
 import { api } from "@/api/client";
+import { useOpenSettings } from "@/components/settings/settings-link";
 import { qk } from "@/api/queries";
 import { StatusBadge } from "@/components/status-badge";
 import { Panel } from "@/components/page";
@@ -10,15 +10,20 @@ import { formatDateTime, formatInt } from "@/lib/format";
 
 export function OverviewPricing() {
   const states = useQuery({ queryKey: qk.pricingSync, queryFn: api.pricingSync });
+  const openSettings = useOpenSettings();
 
   return (
     <Panel
       title="Pricing sync"
       description="Catalog sync status and pricing feeds."
       actions={
-        <Link to="/pricing" className="text-sm font-medium text-primary hover:underline">
+        <button
+          type="button"
+          className="text-sm font-medium text-primary hover:underline"
+          onClick={() => openSettings("pricing")}
+        >
           Manage
-        </Link>
+        </button>
       }
     >
       <QueryBoundary
@@ -26,7 +31,7 @@ export function OverviewPricing() {
         isEmpty={(list) => list.length === 0}
         empty={
           <EmptyState icon={TagsIcon} title="Never synced">
-            Unknown models are billed at $0. Sync prices on the Pricing page.
+            Unknown models are billed at $0. Sync prices in Settings → Pricing.
           </EmptyState>
         }
       >

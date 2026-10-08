@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { KeyRoundIcon, LogInIcon, PlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Provider } from "@/api/types";
@@ -30,7 +30,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function ProviderDetailPage() {
-  const id = useParams().id ?? "";
+  const id = useParams({ from: "/_app/providers/$id" }).id;
   const providers = useQuery({ queryKey: qk.providers, queryFn: api.providers });
   const provider = providers.data?.find((p) => p.id === id);
 
@@ -66,14 +66,13 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
     invalidate: [qk.providers],
     success: "Provider deleted.",
     inline: true,
-    onSuccess: () => void navigate("/providers"),
+    onSuccess: () => void navigate({ to: "/providers" }),
   });
 
   return (
     <>
       <PageHeader
         title={<span className="font-mono">{provider.id}</span>}
-        breadcrumbs={[{ label: "Providers", to: "/providers" }, { label: provider.id }]}
         description={type?.label ?? provider.type}
         actions={
           <>

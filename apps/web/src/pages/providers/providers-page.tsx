@@ -1,12 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
-import { PlusIcon, SearchIcon, ServerIcon } from "lucide-react";
+import {
+  PlusIcon,
+  PowerIcon,
+  PowerOffIcon,
+  SearchIcon,
+  ServerIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link } from "@tanstack/react-router";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Provider } from "@/api/types";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { PageHeader, Panel } from "@/components/page";
+import { RowActions } from "@/components/row-actions";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -97,7 +105,9 @@ export function ProvidersPage() {
                       <TableHead>Strategy</TableHead>
                       <TableHead className="text-right">Credentials</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="w-10">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -105,7 +115,8 @@ export function ProvidersPage() {
                       <TableRow key={p.id}>
                         <TableCell>
                           <Link
-                            to={`/providers/${encodeURIComponent(p.id)}`}
+                            to="/providers/$id"
+                            params={{ id: p.id }}
                             className="font-medium text-primary hover:underline"
                           >
                             {p.id}
@@ -138,26 +149,33 @@ export function ProvidersPage() {
                           </StatusBadge>
                         </TableCell>
                         <TableCell>
-                          <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => toggle.mutate(p)}>
-                              {p.enabled ? "Disable" : "Enable"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() =>
-                                void ConfirmModal.show({
-                                  title: `Delete ${p.id}?`,
-                                  message:
-                                    "Its credentials are deleted with it and aliases pointing here stop resolving. Usage history is kept.",
-                                  confirmLabel: "Delete provider",
-                                  action: () => remove.mutateAsync(p.id),
-                                })
-                              }
-                            >
-                              Delete
-                            </Button>
-                          </div>
+                          <RowActions
+                            label={`Actions for ${p.id}`}
+                            groups={[
+                              [
+                                {
+                                  label: p.enabled ? "Disable" : "Enable",
+                                  icon: p.enabled ? PowerOffIcon : PowerIcon,
+                                  onSelect: () => toggle.mutate(p),
+                                },
+                              ],
+                              [
+                                {
+                                  label: "Delete",
+                                  icon: Trash2Icon,
+                                  destructive: true,
+                                  onSelect: () =>
+                                    void ConfirmModal.show({
+                                      title: `Delete ${p.id}?`,
+                                      message:
+                                        "Its credentials are deleted with it and aliases pointing here stop resolving. Usage history is kept.",
+                                      confirmLabel: "Delete provider",
+                                      action: () => remove.mutateAsync(p.id),
+                                    }),
+                                },
+                              ],
+                            ]}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}

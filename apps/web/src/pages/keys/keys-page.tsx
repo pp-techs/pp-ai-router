@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { AddLimitModal } from "./add-limit-dialog";
 import { CreateKeyModal } from "./create-key-dialog";
 import { CreatedKeyModal } from "./created-key-dialog";
-import { KeyCard } from "./key-card";
+import { KeysTable } from "./keys-table";
 
 export function KeysPage() {
   // Usage bars move as requests flow through the router, so poll.
@@ -59,24 +59,21 @@ export function KeysPage() {
         }
       >
         {(list) => (
-          <div className="grid gap-4">
-            {list.map((k) => (
-              <KeyCard
-                key={k.id}
-                apiKey={k}
-                onAddLimit={() => void AddLimitModal.show({ apiKey: k })}
-                onDelete={() =>
-                  void ConfirmModal.show({
-                    title: `Delete ${k.name}?`,
-                    message:
-                      "Clients using this key stop working immediately. Its usage history is kept.",
-                    confirmLabel: "Delete key",
-                    action: () => remove.mutateAsync(k.id),
-                  })
-                }
-              />
-            ))}
-          </div>
+          <Panel flush>
+            <KeysTable
+              keys={list}
+              onAddLimit={(k) => void AddLimitModal.show({ apiKey: k })}
+              onDelete={(k) =>
+                void ConfirmModal.show({
+                  title: `Delete ${k.name}?`,
+                  message:
+                    "Clients using this key stop working immediately. Its usage history is kept.",
+                  confirmLabel: "Delete key",
+                  action: () => remove.mutateAsync(k.id),
+                })
+              }
+            />
+          </Panel>
         )}
       </QueryBoundary>
     </>

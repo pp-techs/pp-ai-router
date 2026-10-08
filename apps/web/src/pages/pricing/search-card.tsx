@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CoinsIcon, SearchIcon } from "lucide-react";
+import { CoinsIcon, SearchIcon, TagIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api } from "@/api/client";
 import { ApiError } from "@/api/http";
@@ -62,11 +62,7 @@ function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
         ) : (
           <PriceTable
             prices={[price.data]}
-            actions={(p) => (
-              <Button size="sm" variant="outline" onClick={() => onOverride(p)}>
-                Override
-              </Button>
-            )}
+            actions={(p) => [[{ label: "Override", icon: TagIcon, onSelect: () => onOverride(p) }]]}
           />
         ))}
     </div>
@@ -115,11 +111,7 @@ export function PriceSearchCard({ onOverride }: { onOverride: (price: Price) => 
         {(list) => (
           <PriceTable
             prices={list}
-            actions={(p) => (
-              <Button size="sm" variant="outline" onClick={() => onOverride(p)}>
-                Override
-              </Button>
-            )}
+            actions={(p) => [[{ label: "Override", icon: TagIcon, onSelect: () => onOverride(p) }]]}
           />
         )}
       </QueryBoundary>

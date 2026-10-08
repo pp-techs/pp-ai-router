@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
@@ -9,7 +10,17 @@ const router = process.env.ROUTER_URL ?? "http://127.0.0.1:8080";
 
 export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    // Generates src/route-tree.gen.ts from src/routes; must run before the React plugin.
+    tanstackRouter({
+      target: "react",
+      routesDirectory: "./src/routes",
+      generatedRouteTree: "./src/route-tree.gen.ts",
+      autoCodeSplitting: true,
+    }),
+    react(),
+    tailwindcss(),
+  ],
   server: { proxy: { "/admin": router, "/v1": router, "/healthz": router } },
   test: { include: ["src/**/*.test.ts"] },
 });

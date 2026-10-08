@@ -1,27 +1,23 @@
 import { ArrowRightIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { api } from "@/api/client";
 import { auth } from "@/api/http";
-import { BrandMark } from "@/components/layout";
+import { BrandMark } from "@/components/brand";
 import { FormError } from "@/components/form-error";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { useToken } from "@/lib/use-token";
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const from = (useLocation().state as { from?: string } | null)?.from ?? "/";
-  const stored = useToken();
+  const from = useSearch({ from: "/login" }).from ?? "/";
   const [token, setToken] = useState("");
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  if (stored) return <Navigate to={from} replace />;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -30,7 +26,7 @@ export function LoginPage() {
     try {
       await api.checkToken(token.trim());
       auth.set(token.trim());
-      void navigate(from, { replace: true });
+      void navigate({ href: from, replace: true });
     } catch (e) {
       setError((e as Error).message);
     } finally {

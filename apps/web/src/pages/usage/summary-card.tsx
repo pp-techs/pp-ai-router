@@ -7,22 +7,19 @@ import type { UsageGroup, VirtualKey } from "@/api/types";
 import { OptionSelect } from "@/components/option-select";
 import { Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { RANGES, type RangeKey } from "@/lib/timeline";
 import { SummaryTable } from "./summary-table";
-
-const HOUR = 3_600_000;
-const RANGES: Record<string, { label: string; ms: number | null }> = {
-  "1h": { label: "Last hour", ms: HOUR },
-  "24h": { label: "Last 24 hours", ms: 24 * HOUR },
-  "7d": { label: "Last 7 days", ms: 7 * 24 * HOUR },
-  "30d": { label: "Last 30 days", ms: 30 * 24 * HOUR },
-  all: { label: "All time", ms: null },
-};
 
 const GROUPS: Record<UsageGroup, string> = { model: "Model", provider: "Provider", key: "API key" };
 
-export function UsageSummaryCard({ keys }: { keys: VirtualKey[] | undefined }) {
+export function UsageSummaryCard({
+  keys,
+  range,
+}: {
+  keys: VirtualKey[] | undefined;
+  range: RangeKey;
+}) {
   const [group, setGroup] = useState<UsageGroup>("model");
-  const [range, setRange] = useState("24h");
 
   const summary = useQuery({
     queryKey: qk.usageSummary(group, range),
@@ -56,16 +53,6 @@ export function UsageSummaryCard({ keys }: { keys: VirtualKey[] | undefined }) {
               value,
               label: `By ${label.toLowerCase()}`,
             }))}
-          />
-          <span aria-hidden className="text-xs text-muted-foreground">
-            Time range
-          </span>
-          <OptionSelect
-            aria-label="Time range"
-            className="w-auto min-w-32"
-            value={range}
-            onValueChange={setRange}
-            options={Object.entries(RANGES).map(([value, { label }]) => ({ value, label }))}
           />
         </>
       }

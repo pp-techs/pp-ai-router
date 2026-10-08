@@ -215,6 +215,22 @@ export interface UsageSummaryRow {
   unpriced_requests: number;
 }
 
+export interface UsageBucket {
+  /** Start of the bucket, ms since the epoch. */
+  ts: number;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface UsageTimeline {
+  since: number;
+  bucket_ms: number;
+  /** Only buckets that saw traffic; see `fillBuckets`. */
+  data: UsageBucket[];
+}
+
 export interface UsageSummary {
   since: number;
   group_by: string;

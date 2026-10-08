@@ -6,6 +6,7 @@ import { qk, useAction } from "@/api/queries";
 import type { Alias, Provider } from "@/api/types";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { PageHeader, Panel } from "@/components/page";
+import { RowActions } from "@/components/row-actions";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -62,7 +63,9 @@ function AliasTable({
             <TableRow>
               <TableHead>Alias</TableHead>
               <TableHead>Targets, in fallback order</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-10">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -93,21 +96,28 @@ function AliasTable({
                   </ol>
                 </TableCell>
                 <TableCell className="align-top">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!providers}
-                      onClick={() => providers && void AliasModal.show({ alias: a, providers })}
-                    >
-                      <PencilIcon data-icon="inline-start" />
-                      Edit
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => onDelete(a)}>
-                      <Trash2Icon data-icon="inline-start" />
-                      Delete
-                    </Button>
-                  </div>
+                  <RowActions
+                    label={`Actions for ${a.alias}`}
+                    groups={[
+                      [
+                        {
+                          label: "Edit",
+                          icon: PencilIcon,
+                          disabled: !providers,
+                          onSelect: () =>
+                            providers && void AliasModal.show({ alias: a, providers }),
+                        },
+                      ],
+                      [
+                        {
+                          label: "Delete",
+                          icon: Trash2Icon,
+                          destructive: true,
+                          onSelect: () => onDelete(a),
+                        },
+                      ],
+                    ]}
+                  />
                 </TableCell>
               </TableRow>
             ))}

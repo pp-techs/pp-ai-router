@@ -670,6 +670,25 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json({ since, group_by: group, data: rows });
   });
 
+  // Non-empty buckets only, aligned to multiples of `bucket_ms` since the epoch; the UI fills gaps.
+  app.get("/usage/timeline", (c) => {
+    const q = c.req.query();
+    const since = Number(q.since ?? now() - 86_400_000);
+    const bucketMs = Math.floor(Number(q.bucket_ms));
+    if (!Number.isFinite(since) || !Number.isFinite(bucketMs) || bucketMs < 1000) {
+      throw new HttpError(400, "invalid_request", "bucket_ms must be an integer of at least 1000");
+    }
+    const rows = all<Record<string, unknown>>(
+      db.prepare(
+        `SELECT CAST(ts / ?1 AS INTEGER) * ?1 AS ts, COUNT(*) AS requests, SUM(input_tokens) AS input_tokens,
+                SUM(output_tokens) AS output_tokens, SUM(cost_usd) AS cost_usd
+           FROM usage_events WHERE ts >= ?2 ${q.key_id ? "AND key_id = ?3" : ""} GROUP BY 1 ORDER BY 1`,
+      ),
+      ...(q.key_id ? [bucketMs, since, q.key_id] : [bucketMs, since]),
+    );
+    return c.json({ since, bucket_ms: bucketMs, data: rows });
+  });
+
   // ---- pricing ---------------------------------------------------------------------------
   app.get("/pricing", (c) =>
     c.json({

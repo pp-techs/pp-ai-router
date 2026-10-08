@@ -27,6 +27,7 @@ import type {
   UsageFilter,
   UsageGroup,
   UsageSummary,
+  UsageTimeline,
   VirtualKey,
 } from "./types.ts";
 
@@ -104,6 +105,11 @@ export const api = {
   usageSummary: (groupBy: UsageGroup, since: number) =>
     request<UsageSummary>("GET", "/admin/usage/summary", {
       query: { group_by: groupBy, since },
+    }),
+
+  usageTimeline: (since: number, bucketMs: number) =>
+    request<UsageTimeline>("GET", "/admin/usage/timeline", {
+      query: { since, bucket_ms: bucketMs },
     }),
 
   prices: (q: string) => unwrap(request<List<Price>>("GET", "/admin/pricing", { query: { q } })),

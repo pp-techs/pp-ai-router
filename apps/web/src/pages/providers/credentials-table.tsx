@@ -1,9 +1,17 @@
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Credential } from "@/api/types";
+import {
+  HeartPulseIcon,
+  KeyRoundIcon,
+  PencilIcon,
+  PowerIcon,
+  PowerOffIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { ConfirmModal } from "@/components/confirm-modal";
+import { RowActions } from "@/components/row-actions";
 import { StatusBadge, type Tone } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -55,7 +63,9 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
           <TableHead className="text-right">In flight</TableHead>
           <TableHead>Cooldown</TableHead>
           {showExpiry && <TableHead>Expires</TableHead>}
-          <TableHead className="text-right">Actions</TableHead>
+          <TableHead className="w-10">
+            <span className="sr-only">Actions</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -106,46 +116,47 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
                 </TableCell>
               )}
               <TableCell>
-                <div className="flex justify-end gap-1.5">
-                  {c.status === "dead" && (
-                    <Button size="sm" onClick={() => revive.mutate(c)}>
-                      Revive
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void EditCredentialModal.show({ credential: c })}
-                  >
-                    Edit
-                  </Button>
-                  {c.kind === "api_key" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void ReplaceSecretModal.show({ credential: c })}
-                    >
-                      Replace secret
-                    </Button>
-                  )}
-                  <Button size="sm" variant="outline" onClick={() => toggle.mutate(c)}>
-                    {c.enabled ? "Disable" : "Enable"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() =>
-                      void ConfirmModal.show({
-                        title: `Delete ${c.label}?`,
-                        message: "The credential is removed from the pool immediately.",
-                        confirmLabel: "Delete credential",
-                        action: () => remove.mutateAsync(c),
-                      })
-                    }
-                  >
-                    Delete
-                  </Button>
-                </div>
+                <RowActions
+                  label={`Actions for ${c.label}`}
+                  groups={[
+                    [
+                      c.status === "dead" && {
+                        label: "Revive",
+                        icon: HeartPulseIcon,
+                        onSelect: () => revive.mutate(c),
+                      },
+                      {
+                        label: "Edit",
+                        icon: PencilIcon,
+                        onSelect: () => void EditCredentialModal.show({ credential: c }),
+                      },
+                      c.kind === "api_key" && {
+                        label: "Replace secret",
+                        icon: KeyRoundIcon,
+                        onSelect: () => void ReplaceSecretModal.show({ credential: c }),
+                      },
+                      {
+                        label: c.enabled ? "Disable" : "Enable",
+                        icon: c.enabled ? PowerOffIcon : PowerIcon,
+                        onSelect: () => toggle.mutate(c),
+                      },
+                    ],
+                    [
+                      {
+                        label: "Delete",
+                        icon: Trash2Icon,
+                        destructive: true,
+                        onSelect: () =>
+                          void ConfirmModal.show({
+                            title: `Delete ${c.label}?`,
+                            message: "The credential is removed from the pool immediately.",
+                            confirmLabel: "Delete credential",
+                            action: () => remove.mutateAsync(c),
+                          }),
+                      },
+                    ],
+                  ]}
+                />
               </TableCell>
             </TableRow>
           );

@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
 import type { Price } from "@/api/types";
+import { RowActions, type RowEntry } from "@/components/row-actions";
 import { StatusBadge } from "@/components/status-badge";
 import {
   Table,
@@ -11,13 +11,13 @@ import {
 } from "@/components/ui/table";
 import { formatPer1m, formatTier } from "@/lib/format";
 
-/** Prices per 1M tokens; `actions` renders an extra cell per row. */
+/** Prices per 1M tokens; `actions` adds a trailing dropdown of actions per row. */
 export function PriceTable({
   prices,
   actions,
 }: {
   prices: Price[];
-  actions?: (price: Price) => ReactNode;
+  actions?: (price: Price) => (RowEntry | false)[][];
 }) {
   return (
     <Table className="min-w-176">
@@ -30,7 +30,11 @@ export function PriceTable({
           <TableHead className="text-right">Cache read / 1M</TableHead>
           <TableHead className="text-right">Cache write / 1M</TableHead>
           <TableHead>Long-context tiers</TableHead>
-          {actions && <TableHead className="text-right">Actions</TableHead>}
+          {actions && (
+            <TableHead className="w-10">
+              <span className="sr-only">Actions</span>
+            </TableHead>
+          )}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -65,7 +69,11 @@ export function PriceTable({
                 </ul>
               )}
             </TableCell>
-            {actions && <TableCell className="text-right">{actions(p)}</TableCell>}
+            {actions && (
+              <TableCell>
+                <RowActions label={`Actions for ${p.model}`} groups={actions(p)} />
+              </TableCell>
+            )}
           </TableRow>
         ))}
       </TableBody>

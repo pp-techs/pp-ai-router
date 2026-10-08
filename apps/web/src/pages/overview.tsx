@@ -13,6 +13,7 @@ import { EmptyState, QueryBoundary } from "@/components/query-state";
 import { formatInt, formatUsd } from "@/lib/format";
 import { OverviewPricing } from "./overview-pricing";
 import { ProviderHealthCard } from "./overview-providers";
+import { UsageChart } from "./usage/usage-chart";
 import { SummaryTable, summaryTotals } from "./usage/summary-table";
 
 const DAY_MS = 86_400_000;
@@ -58,6 +59,7 @@ export function OverviewPage() {
       </div>
 
       <div className="grid gap-6">
+        <UsageChart range="24h" />
         <Panel title="Usage by model" description="Breakdown by routed upstream model." flush>
           <QueryBoundary
             query={summary}
