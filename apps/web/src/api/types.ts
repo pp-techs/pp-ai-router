@@ -27,6 +27,8 @@ export interface ProviderType {
   oauth: { label: string } | null;
   /** How the provider's model list is known: fixed in the adapter, fetched from the upstream, or not at all. */
   models: "static" | "fetch" | "none";
+  /** True when the provider type can report per-account quota. */
+  quota: boolean;
 }
 
 export interface Provider {
@@ -275,4 +277,50 @@ export interface ProviderModels {
   /** Error of the latest fetch; the previous list stays in `data`. */
   error: string | null;
   data: ProviderModel[];
+}
+
+export interface QuotaWindow {
+  label: string;
+  used_percent: number;
+  /** Epoch ms; null when unknown. */
+  resets_at: number | null;
+}
+
+export interface QuotaCredits {
+  used: number;
+  limit: number;
+}
+
+export type QuotaFailure =
+  | "account_unavailable"
+  | "access_denied"
+  | "rate_limited"
+  | "upstream_error"
+  | "timeout"
+  | "transport_error"
+  | "response_unusable";
+
+export interface ProviderQuota {
+  windows: QuotaWindow[];
+  /** Null when the provider has no credit counter. */
+  credits: QuotaCredits | null;
+  /** The credential is parked (not routed to) until `resets_at`. */
+  exhausted: boolean;
+  resets_at: number | null;
+}
+
+/** One credential's quota in a provider's quota report. */
+export interface AccountQuota {
+  credential_id: string;
+  label: string;
+  account: string | null;
+  status: "ok" | "unavailable";
+  failure: QuotaFailure | null;
+  checked_at: number;
+  quota: ProviderQuota | null;
+}
+
+export interface ProviderQuotaReport {
+  supported: boolean;
+  data: AccountQuota[];
 }

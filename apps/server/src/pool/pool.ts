@@ -9,6 +9,8 @@ interface CredentialState {
   inflight: number;
   failCount: number;
   cooldownUntil: number;
+  /** Out of quota until this time (set by the quota probe; not cleared by a successful request). */
+  parkedUntil: number;
   lastUsedAt: number;
   /** Request start times in the last minute, for the per-credential rpm cap. */
   recent: number[];
@@ -76,11 +78,16 @@ export class CredentialPool {
     );
     const ready = usable.filter((c) => {
       const s = this.#stateOf(c.id);
-      if (s.cooldownUntil > now) return false;
+      if (s.cooldownUntil > now || s.parkedUntil > now) return false;
       return c.rpmLimit === null || this.#requestsLastMinute(s, now) < c.rpmLimit;
     });
     if (ready.length === 0) {
-      const waits = usable.map((c) => this.#stateOf(c.id).cooldownUntil).filter((t) => t > now);
+      const waits = usable
+        .map((c) => {
+          const s = this.#stateOf(c.id);
+          return Math.max(s.cooldownUntil, s.parkedUntil);
+        })
+        .filter((t) => t > now);
       return { error: "no_credential", retryAt: waits.length ? Math.min(...waits) : null };
     }
 
@@ -115,6 +122,14 @@ export class CredentialPool {
     this.#usage.add(credentialId, tokens, this.#now());
   }
 
+  /**
+   * Takes a credential out of rotation until `until` (epoch ms) because its account is out of quota;
+   * `null` (or a time in the past) puts it back. Independent of the failure cooldown.
+   */
+  park(credentialId: string, until: number | null): void {
+    this.#stateOf(credentialId).parkedUntil = until !== null && until > this.#now() ? until : 0;
+  }
+
   /** Live health for the admin API. */
   snapshot(credentialId: string): {
     inflight: number;
@@ -122,10 +137,11 @@ export class CredentialPool {
     cooldownUntil: number | null;
   } {
     const s = this.#stateOf(credentialId);
+    const until = Math.max(s.cooldownUntil, s.parkedUntil);
     return {
       inflight: s.inflight,
       failCount: s.failCount,
-      cooldownUntil: s.cooldownUntil > this.#now() ? s.cooldownUntil : null,
+      cooldownUntil: until > this.#now() ? until : null,
     };
   }
 
@@ -167,7 +183,14 @@ export class CredentialPool {
   #stateOf(id: string): CredentialState {
     let s = this.#state.get(id);
     if (!s) {
-      s = { inflight: 0, failCount: 0, cooldownUntil: 0, lastUsedAt: 0, recent: [] };
+      s = {
+        inflight: 0,
+        failCount: 0,
+        cooldownUntil: 0,
+        parkedUntil: 0,
+        lastUsedAt: 0,
+        recent: [],
+      };
       this.#state.set(id, s);
     }
     return s;

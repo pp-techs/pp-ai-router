@@ -13,7 +13,7 @@
 
 The adapted adapters keep opencodex's wire knowledge but target this repo's chat-completions interface; see [../project-pdr/opencodex-origin.md](../project-pdr/opencodex-origin.md) for what was ported and what was not.
 
-Optional adapter members: `oauth` (enables login + refresh), `staticModels` (wins over `listModels`), `defaultBaseUrl` (null = `base_url` mandatory).
+Optional adapter members: `oauth` (enables login + refresh), `staticModels` (wins over `listModels`), `quota` (account allowance, Kiro and Antigravity only), `defaultBaseUrl` (null = `base_url` mandatory).
 
 ## Registry and pool
 
@@ -45,6 +45,10 @@ sequenceDiagram
 - `TokenManager` refreshes shortly before expiry, shares one refresh among concurrent callers (refresh tokens are often single-use), and persists the result encrypted via `Registry.saveTokens`.
 - `OAuthRefreshError.terminal` retires the account until it signs in again; anything else only cools it down.
 - Provider-specific fields that must survive refreshes (project id, profile ARN, regions, client registration) live in `OAuthTokens.extra`.
+
+## Account quota
+
+`QuotaService` (`quota/service.ts`) reads each OAuth account's allowance through `adapter.quota()` (`providers/kiro/quota.ts`, `providers/antigravity/quota.ts`; shared types and parsing helpers in `quota/`). Readings are cached (10 min, failures 1 min) and probes are single-flight; a token is resolved through `TokenManager` (with one forced refresh on 401). An account whose reading is `exhausted` is parked in `CredentialPool` (`park(id, until)`, separate from the failure cooldown and not cleared by a successful request) until the reset time. Triggers: the admin endpoints (`GET /admin/providers/:id/quota`, `/admin/credentials/:id/quota`), a periodic sync (`QUOTA_SYNC_INTERVAL_MINUTES`) and a 429 from an OAuth account in the request pipeline (at most one probe a minute per account).
 
 ## Secrets at rest
 

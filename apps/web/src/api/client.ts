@@ -21,6 +21,7 @@ import type {
   ProviderCreate,
   ProviderPatch,
   ProviderModels,
+  ProviderQuotaReport,
   ProviderType,
   UsageEvent,
   UsageFilter,
@@ -57,6 +58,12 @@ export const api = {
     request<ProviderModels>("GET", `/admin/providers/${id(providerId)}/models`),
   refreshProviderModels: (providerId: string) =>
     request<ProviderModels>("POST", `/admin/providers/${id(providerId)}/models/refresh`),
+
+  /** Cached when fresh; `refresh` forces a live upstream probe. */
+  providerQuota: (providerId: string, refresh = false) =>
+    request<ProviderQuotaReport>("GET", `/admin/providers/${id(providerId)}/quota`, {
+      query: { refresh: refresh ? "true" : undefined },
+    }),
 
   credentials: (providerId: string) =>
     unwrap(request<List<Credential>>("GET", `/admin/providers/${id(providerId)}/credentials`)),

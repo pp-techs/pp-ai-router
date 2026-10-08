@@ -3,6 +3,7 @@ import { errorBody } from "../../errors.ts";
 import type { ProviderAdapter } from "../adapter.ts";
 import { respond } from "../chunks.ts";
 import { normalizeKiroHttpError } from "./errors.ts";
+import { fetchKiroQuota } from "./quota.ts";
 import { createKiroOAuth, type KiroOAuthOptions } from "./oauth.ts";
 import { buildKiroRequest, KiroRequestError } from "./request.ts";
 import { kiroChunks } from "./stream.ts";
@@ -99,6 +100,7 @@ export function createKiroAdapter(options: KiroOAuthOptions = {}): ProviderAdapt
     defaultBaseUrl: KIRO_DEFAULT_BASE_URL,
     oauth: createKiroOAuth(options),
     staticModels: KIRO_MODELS,
+    quota: (input) => fetchKiroQuota(input, doFetch),
     async call({ baseUrl, token, meta, body, stream, signal }) {
       const identity = resolveIdentity(token, meta);
       let built;
