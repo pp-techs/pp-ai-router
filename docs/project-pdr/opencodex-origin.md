@@ -20,15 +20,17 @@ pp-ai-router is **not** a fork: the router, governance, pool, pricing, admin API
 
 ## What was adapted
 
-Every adapted file starts with `// Adapted from lidge-jun/opencodex (MIT)` (26 files under `apps/server/src/providers/`). The port target is the canonical OpenAI chat-completions shape used by `ProviderAdapter` (`providers/adapter.ts`), instead of opencodex's Responses-API front end.
+Every adapted file starts with `// Adapted from lidge-jun/opencodex (MIT)` (28 files under `apps/server/src/providers/`). The port target is the canonical OpenAI chat-completions shape used by `ProviderAdapter` (`providers/adapter.ts`), instead of opencodex's Responses-API front end.
 
-| Provider      | Adapted files                                                                                                   | Reference behaviour kept                                                                                                                    |
-| ------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anthropic`   | `anthropic.ts`, `anthropic/{model-contract,request,response}.ts`                                                | Messages API translation, thinking/adaptive effort rules, signed `thinking_blocks`, history repair                                          |
-| `antigravity` | `antigravity/{adapter,constants,models,oauth,replay,request,stream,tool-schema,wire-compiler}.ts`               | Cloud Code Assist `v1internal` wire format, model-name mapping, tool-schema reduction, thought-signature replay, PKCE paste login           |
-| `kiro`        | `kiro/{adapter,errors,events,eventstream,models,oauth,reasoning,request,stream,think-tags,tools,usage,wire}.ts` | CodeWhisperer streaming request/response mapping, AWS event-stream decoding, SSO OIDC device login, region fallback, token-usage heuristics |
+| Provider      | Adapted files                                                                                                         | Reference behaviour kept                                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anthropic`   | `anthropic.ts`, `anthropic/{model-contract,request,response}.ts`                                                      | Messages API translation, thinking/adaptive effort rules, signed `thinking_blocks`, history repair                                          |
+| `antigravity` | `antigravity/{adapter,constants,models,oauth,quota,replay,request,stream,tool-schema,wire-compiler}.ts`               | Cloud Code Assist `v1internal` wire format, model-name mapping, tool-schema reduction, thought-signature replay, PKCE paste login           |
+| `kiro`        | `kiro/{adapter,errors,events,eventstream,models,oauth,quota,reasoning,request,stream,think-tags,tools,usage,wire}.ts` | CodeWhisperer streaming request/response mapping, AWS event-stream decoding, SSO OIDC device login, region fallback, token-usage heuristics |
 
-Not adapted (original to this repo): `providers/openai-compat.ts`, `providers/chunks.ts`, `providers/model-list.ts`, `providers/anthropic/json.ts`, `providers/antigravity/json.ts`.
+Quota (`kiro/quota.ts` from `src/providers/kiro-usage.ts`, `antigravity/quota.ts` from `src/providers/quota/antigravity.ts`) ports only the upstream calls and response parsing. The service around it (`src/quota/`: cache, parking in the pool, admin API, UI) is original.
+
+Not adapted (original to this repo): `quota/`, `providers/openai-compat.ts`, `providers/chunks.ts`, `providers/model-list.ts`, `providers/anthropic/json.ts`, `providers/antigravity/json.ts`.
 
 ## What was deliberately not ported
 
@@ -38,7 +40,7 @@ These exist in opencodex for its Codex/Responses front end or local-machine inte
 - Responses continuations and reasoning-blob replay (`signature` / `redactedContent` are dropped)
 - per-conversation token calibration and image re-encoding
 - the process-wide 429 throttle gate and connection-reset retries (the gateway's failover covers them)
-- reading or rotating the local `kiro-cli` database, account leases/failover, usage-limit lookups
+- reading or rotating the local `kiro-cli` database, account leases/failover, quota-based routing rank, on-disk quota verdicts, passive quota observation, the pinned outbound transport for quota probes
 
 ## Rules for contributors
 

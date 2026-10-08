@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ROUTER_URL=http://127.0.0.1:43523 vp dev --port 43524 --strictPort",
     "build": "tsc && vp build",
+    "test": "vp test",
     "preview": "vp preview"
   },
   "dependencies": {

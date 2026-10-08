@@ -23,6 +23,7 @@ import type { Db } from "../db/database.ts";
 import type { Accounting, EventStatus } from "./accounting.ts";
 import { parseOpenAiUsage, tapStream } from "./usage.ts";
 import type { Logger } from "../logger.ts";
+import type { QuotaService } from "../quota/service.ts";
 
 export interface GatewayDeps {
   config: Pick<Config, "UPSTREAM_TIMEOUT_MS" | "UNPRICED_MODELS">;
@@ -35,6 +36,7 @@ export interface GatewayDeps {
   accounting: Accounting;
   log: Logger;
   tokens: TokenManager;
+  quota: QuotaService;
   adapters: Readonly<Record<string, ProviderAdapter>>;
   now?: () => number;
 }
@@ -258,6 +260,9 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
         const text = (await res.text().catch(() => "")).slice(0, MAX_UPSTREAM_ERROR_CHARS);
         lease.fail(failure, retryAfterMs(res, now()));
         lease.release();
+        // A 429 from a subscription account usually means its allowance is spent: find out (at most
+        // once a minute per account) so the pool can park it until the quota resets.
+        if (failure === "rate_limited") void deps.quota.get(credentialId, { maxAgeMs: 60_000 });
         lastUpstream = { status: res.status, message: text };
         deps.log.warn("upstream failure", {
           provider: target.provider,

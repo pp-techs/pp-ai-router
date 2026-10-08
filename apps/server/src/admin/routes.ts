@@ -23,6 +23,7 @@ import type { ProviderAdapter } from "../providers/adapter.ts";
 import type { ModelCatalog, ModelList } from "../models.ts";
 import { LoginError, type LoginSessions, type SessionStatus } from "../oauth/login-sessions.ts";
 import type { LoginStartInfo } from "../oauth/types.ts";
+import type { QuotaService, QuotaStatus } from "../quota/service.ts";
 import type { Registry } from "../registry.ts";
 import type { Logger } from "../logger.ts";
 
@@ -38,6 +39,7 @@ export interface AdminDeps {
   adapters: Readonly<Record<string, ProviderAdapter>>;
   logins: LoginSessions;
   models: ModelCatalog;
+  quota: QuotaService;
   log: Logger;
   now?: () => number;
 }
@@ -157,7 +159,7 @@ function parseLimit(input: z.infer<typeof limitInput>) {
 }
 
 export function createAdminApp(deps: AdminDeps): Hono {
-  const { db, box, registry, pool, keys, meter, pricing, adapters, logins, models } = deps;
+  const { db, box, registry, pool, keys, meter, pricing, adapters, logins, models, quota } = deps;
   const now = deps.now ?? Date.now;
   const app = new Hono();
   const expected = sha(deps.adminToken);
@@ -219,6 +221,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
         default_base_url: a.defaultBaseUrl,
         oauth: a.oauth ? { label: a.oauth.label } : null,
         models: a.staticModels ? "static" : a.listModels ? "fetch" : "none",
+        quota: a.quota !== undefined,
       })),
     }),
   );
@@ -345,6 +348,61 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const provider = registry.provider(c.req.param("id"));
     if (!provider) throw notFound("Provider");
     return c.json({ data: provider.credentials.map(credentialView) });
+  });
+
+  // ---- OAuth account quota (cached; `?refresh=true` probes the upstream now) -------------------
+  const quotaView = (
+    status: QuotaStatus,
+    credential: { label: string; account: string | null },
+  ) => ({
+    credential_id: status.credentialId,
+    label: credential.label,
+    account: credential.account,
+    status: status.ok ? "ok" : "unavailable",
+    failure: status.ok ? null : status.failure,
+    checked_at: status.checkedAt,
+    quota: status.ok
+      ? {
+          windows: status.quota.windows.map((w) => ({
+            label: w.label,
+            used_percent: w.usedPercent,
+            resets_at: w.resetsAt,
+          })),
+          credits: status.quota.credits,
+          exhausted: status.quota.exhausted,
+          resets_at: status.quota.resetsAt,
+        }
+      : null,
+  });
+  const quotaOptions = (c: Context) => (c.req.query("refresh") === "true" ? { maxAgeMs: 0 } : {});
+  const accountOf = (cred: { auth: { type: string; tokens?: { account?: string | undefined } } }) =>
+    cred.auth.tokens?.account ?? null;
+
+  app.get("/providers/:id/quota", async (c) => {
+    const provider = registry.provider(c.req.param("id"));
+    if (!provider) throw notFound("Provider");
+    const supported = quota.supports(provider.type);
+    const statuses = supported ? await quota.forProvider(provider.id, quotaOptions(c)) : [];
+    const byId = new Map(provider.credentials.map((cred) => [cred.id, cred]));
+    return c.json({
+      supported,
+      data: statuses.flatMap((s) => {
+        const cred = byId.get(s.credentialId);
+        return cred ? [quotaView(s, { label: cred.label, account: accountOf(cred) })] : [];
+      }),
+    });
+  });
+
+  app.get("/credentials/:id/quota", async (c) => {
+    const id = c.req.param("id");
+    const cred = registry
+      .providers()
+      .flatMap((p) => p.credentials)
+      .find((x) => x.id === id);
+    if (!cred) throw notFound("Credential");
+    const status = await quota.get(id, quotaOptions(c));
+    if (!status) throw notFound("Quota for this credential");
+    return c.json(quotaView(status, { label: cred.label, account: accountOf(cred) }));
   });
 
   app.post("/providers/:id/credentials", async (c) => {

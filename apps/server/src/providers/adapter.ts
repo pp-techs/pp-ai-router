@@ -1,4 +1,5 @@
 import type { OAuthProvider } from "../oauth/types.ts";
+import type { Quota, QuotaCall } from "../quota/types.ts";
 import { antigravity } from "./antigravity/adapter.ts";
 import { anthropic } from "./anthropic.ts";
 import { kiro } from "./kiro/adapter.ts";
@@ -47,6 +48,12 @@ export interface ProviderAdapter {
   readonly staticModels?: readonly ModelInfo[];
   /** Live discovery with one of the provider's credentials. Throws on any failure. */
   listModels?(input: ModelListCall): Promise<ModelInfo[]>;
+  /**
+   * Reads one OAuth account's remaining allowance from the upstream. Throws `QuotaError` with a
+   * closed diagnosis (access refused, rate limited, unusable response, ...); transport errors may
+   * throw as-is. Absent for providers without an account-level usage endpoint.
+   */
+  quota?(input: QuotaCall): Promise<Quota>;
   call(input: UpstreamCall): Promise<Response>;
 }
 

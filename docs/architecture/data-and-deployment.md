@@ -13,7 +13,7 @@ One SQLite file (`node:sqlite`, WAL, `foreign_keys=ON`, `STRICT` tables). `db/mi
 | `usage_events`                                            | Append-only ledger, no foreign keys so history survives key/credential deletion        |
 | `model_prices`, `pricing_overrides`, `pricing_sync_state` | Synced and manual prices (USD per token), sync ETags and errors                        |
 
-Not persisted: pool health/cooldowns, sticky sessions, pending OAuth logins, Antigravity thought signatures.
+Not persisted: pool health/cooldowns and quota parking, cached quota readings, sticky sessions, pending OAuth logins, Antigravity thought signatures.
 
 ## Accounting and limits
 
@@ -33,4 +33,4 @@ Single Docker image (`Dockerfile`, `compose.yaml`): multi-stage build with the V
 
 ## Configuration
 
-Env vars validated in `apps/server/src/config.ts` (template: `apps/server/.env.example`): `MASTER_KEY` (base64 of 32 bytes) and `ADMIN_TOKEN` (>= 16 chars) are required; optional `HOST`, `PORT`, `DB_PATH`, `PRICING_SYNC_ENABLED`, `PRICING_SYNC_INTERVAL_HOURS`, `MODEL_SYNC_INTERVAL_HOURS`, `UNPRICED_MODELS`, `UPSTREAM_TIMEOUT_MS`, `WEB_DIST`. Antigravity also reads `GOOGLE_ANTIGRAVITY_CLIENT_ID`, `GOOGLE_ANTIGRAVITY_CLIENT_SECRET`, `GOOGLE_ANTIGRAVITY_USER_AGENT`.
+Env vars validated in `apps/server/src/config.ts` (template: `apps/server/.env.example`): `MASTER_KEY` (base64 of 32 bytes) and `ADMIN_TOKEN` (>= 16 chars) are required; optional `HOST`, `PORT`, `DB_PATH`, `PRICING_SYNC_ENABLED`, `PRICING_SYNC_INTERVAL_HOURS`, `MODEL_SYNC_INTERVAL_HOURS`, `QUOTA_SYNC_INTERVAL_MINUTES`, `UNPRICED_MODELS`, `UPSTREAM_TIMEOUT_MS`, `WEB_DIST`. Antigravity also reads `GOOGLE_ANTIGRAVITY_CLIENT_ID`, `GOOGLE_ANTIGRAVITY_CLIENT_SECRET`, `GOOGLE_ANTIGRAVITY_USER_AGENT`.

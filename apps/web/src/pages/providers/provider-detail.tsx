@@ -16,6 +16,7 @@ import { CredentialsTable } from "./credentials-table";
 import { ModelsCard } from "./models-card";
 import { OAuthModal } from "./oauth-dialog";
 import { EditProviderModal } from "./provider-dialogs";
+import { QuotaCard } from "./quota-card";
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -162,6 +163,12 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
           {(list) => <CredentialsTable credentials={list} />}
         </QueryBoundary>
       </Panel>
+
+      {type?.quota && (
+        <div className="mt-6">
+          <QuotaCard provider={provider} />
+        </div>
+      )}
 
       <div className="mt-6">
         <ModelsCard

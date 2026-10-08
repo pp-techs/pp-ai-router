@@ -15,6 +15,7 @@ import { silentLogger, type Logger } from "./logger.ts";
 import { LoginSessions } from "./oauth/login-sessions.ts";
 import { TokenManager } from "./oauth/token-manager.ts";
 import { CredentialPool } from "./pool/pool.ts";
+import { QuotaService } from "./quota/service.ts";
 import { RecentUsage } from "./pool/recent-usage.ts";
 import { PricingStore } from "./pricing/store.ts";
 import { ADAPTERS, type ProviderAdapter } from "./providers/adapter.ts";
@@ -32,6 +33,7 @@ export interface Services {
   tokens: TokenManager;
   logins: LoginSessions;
   models: ModelCatalog;
+  quota: QuotaService;
 }
 
 export type AppConfig = Pick<
@@ -71,6 +73,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
   const tokens = new TokenManager(registry, adapters, log, now);
   const logins = new LoginSessions(db, box, registry, adapters, now);
   const models = new ModelCatalog(db, registry, tokens, adapters, log, now);
+  const quota = new QuotaService(registry, pool, tokens, adapters, log, now);
 
   const app = new Hono();
   app.onError((error, c) => {
@@ -97,6 +100,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
     accounting,
     log,
     tokens,
+    quota,
     adapters,
     now,
   });
@@ -144,6 +148,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
       adapters,
       logins,
       models,
+      quota,
       log,
       now,
     }),
@@ -151,7 +156,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
 
   if (config.WEB_DIST) mountWeb(app, resolve(config.WEB_DIST), log);
 
-  return { app, db, pricing, registry, pool, keys, meter, tokens, logins, models };
+  return { app, db, pricing, registry, pool, keys, meter, tokens, logins, models, quota };
 }
 
 /**

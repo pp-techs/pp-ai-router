@@ -14,6 +14,8 @@ const schema = z.object({
   PRICING_SYNC_INTERVAL_HOURS: z.coerce.number().positive().default(24),
   /** How often provider model lists are re-fetched from their upstreams; 0 = only on demand. */
   MODEL_SYNC_INTERVAL_HOURS: z.coerce.number().min(0).default(6),
+  /** How often every OAuth account's quota is re-read (and exhausted accounts are parked); 0 = only on demand. */
+  QUOTA_SYNC_INTERVAL_MINUTES: z.coerce.number().min(0).default(30),
   /** What to do when a model has no known price: bill $0 and flag it, or refuse the request. */
   UNPRICED_MODELS: z.enum(["allow", "reject"]).default("allow"),
   UPSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),

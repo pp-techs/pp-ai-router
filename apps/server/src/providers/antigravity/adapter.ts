@@ -3,6 +3,7 @@ import type { ProviderAdapter } from "../adapter.ts";
 import { respond } from "../chunks.ts";
 import { DEFAULT_BASE_URL, PROJECT_KEY } from "./constants.ts";
 import { ANTIGRAVITY_MODELS } from "./models.ts";
+import { fetchAntigravityQuota } from "./quota.ts";
 import { createAntigravityOAuth, type OAuthDeps } from "./oauth.ts";
 import { buildRequest, UnsupportedRequestError, type BuiltRequest } from "./request.ts";
 import { chunksFromJson, chunksFromSse, GeminiMapper } from "./stream.ts";
@@ -20,6 +21,7 @@ export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter 
     defaultBaseUrl: DEFAULT_BASE_URL,
     oauth: createAntigravityOAuth(deps),
     staticModels: ANTIGRAVITY_MODELS,
+    quota: (input) => fetchAntigravityQuota(input, doFetch),
 
     async call({ baseUrl, token, meta, body, stream, signal }) {
       const project = meta[PROJECT_KEY];
