@@ -8,13 +8,20 @@ import { METRIC_LABELS, WINDOW_PRESETS, type LimitDraft } from "@/lib/limits";
 const CUSTOM = "custom";
 
 const METRIC_OPTIONS = METRICS.map((m) => ({ value: m, label: METRIC_LABELS[m] }));
+const WINDOW_LABELS: Record<string, string> = {
+  "30m": "30 minutes",
+  "1h": "1 hour",
+  "1d": "1 day",
+  "7d": "7 days",
+  total: "Total",
+};
 const WINDOW_OPTIONS = [
-  ...WINDOW_PRESETS.map((w) => ({ value: w, label: w })),
-  { value: CUSTOM, label: "custom…" },
+  ...WINDOW_PRESETS.map((w) => ({ value: w, label: WINDOW_LABELS[w] ?? w })),
+  { value: CUSTOM, label: "Custom…" },
 ];
 const MODE_OPTIONS = [
-  { value: "fixed", label: "fixed (UTC)" },
-  { value: "rolling", label: "rolling" },
+  { value: "fixed", label: "Fixed (UTC)" },
+  { value: "rolling", label: "Rolling" },
 ];
 
 /** One limit: metric x window x mode x max. The window is a preset or free text such as "90m" or "2w". */
