@@ -4,8 +4,9 @@ export default defineConfig({
   staged: {
     "*": "vp check --fix",
   },
-  fmt: {},
+  fmt: { ignorePatterns: ["apps/web/src/route-tree.gen.ts"] },
   lint: {
+    ignorePatterns: ["apps/web/src/route-tree.gen.ts"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: { "vite-plus/prefer-vite-plus-imports": "error" },
     options: { typeAware: true, typeCheck: true },

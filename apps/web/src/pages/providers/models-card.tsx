@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BoxesIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
+import { BoxesIcon, NetworkIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
@@ -8,6 +8,7 @@ import { Panel } from "@/components/page";
 import { EmptyState, ErrorState, LoadingState } from "@/components/query-state";
 import { StatusBadge } from "@/components/status-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { RowActions } from "@/components/row-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -145,7 +146,9 @@ export function ModelsCard({
                     <TableHead className="text-right">Input / 1M</TableHead>
                     <TableHead className="text-right">Output / 1M</TableHead>
                     <TableHead>Price source</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="w-10">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -178,10 +181,19 @@ export function ModelsCard({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm" variant="outline" onClick={() => onCreateAlias(m.id)}>
-                          Create alias
-                        </Button>
+                      <TableCell>
+                        <RowActions
+                          label={`Actions for ${m.id}`}
+                          groups={[
+                            [
+                              {
+                                label: "Create alias",
+                                icon: NetworkIcon,
+                                onSelect: () => onCreateAlias(m.id),
+                              },
+                            ],
+                          ]}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}

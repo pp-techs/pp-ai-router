@@ -13,6 +13,12 @@ async function upstream(handler: Parameters<typeof startUpstream>[0]) {
   return u;
 }
 
+interface Bucket {
+  ts: number;
+  requests: number;
+  input_tokens: number;
+}
+
 /** $10 per 1M tokens in and out, so cost = tokens / 100_000. */
 const price = (h: ReturnType<typeof createHarness>, model: string) =>
   h.admin("PUT", "/pricing/overrides", { model, input_per_1m: 10, output_per_1m: 10 });
@@ -44,6 +50,38 @@ describe("request lifecycle", () => {
       price_source: "override",
     });
     expect(events[0].cost_usd).toBeCloseTo(150 / 100_000, 10);
+  });
+
+  it("buckets usage over time, aligned to the bucket size and scoped to a key", async () => {
+    const up = await upstream(() => completion({ prompt_tokens: 100, completion_tokens: 50 }));
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k1"]);
+    await price(h, "acme/m");
+    const a = await h.newKey({ name: "a" });
+    const b = await h.newKey({ name: "b" });
+    const HOUR = 3_600_000;
+    const start = Math.floor(h.clock.now / HOUR) * HOUR;
+
+    h.clock.now = start + 5 * 60_000;
+    await h.chat(a.secret, { model: "acme/m" });
+    await h.chat(b.secret, { model: "acme/m" });
+    h.clock.now = start + 2 * HOUR + 1000;
+    await h.chat(a.secret, { model: "acme/m" });
+
+    const all = (await h.admin("GET", `/usage/timeline?since=${start}&bucket_ms=${HOUR}`)).json;
+    expect(all.data.map((r: Bucket) => [r.ts, r.requests, r.input_tokens])).toEqual([
+      [start, 2, 200],
+      [start + 2 * HOUR, 1, 100],
+    ]);
+    expect(all.data[0].cost_usd).toBeCloseTo(300 / 100_000, 10);
+
+    const scoped = (
+      await h.admin("GET", `/usage/timeline?since=${start}&bucket_ms=${HOUR}&key_id=${b.id}`)
+    ).json;
+    expect(scoped.data.map((r: Bucket) => [r.ts, r.requests])).toEqual([[start, 1]]);
+
+    expect((await h.admin("GET", "/usage/timeline?bucket_ms=5")).status).toBe(400);
+    expect((await h.admin("GET", "/usage/timeline")).status).toBe(400);
   });
 
   it("addresses a provider directly with provider/model", async () => {

@@ -1,6 +1,6 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { ServerIcon } from "lucide-react";
-import { Link } from "react-router";
+import { Link } from "@tanstack/react-router";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
 import { StatusBadge, type Tone } from "@/components/status-badge";
@@ -59,7 +59,8 @@ export function ProviderHealthCard() {
                 <li key={p.id} className="flex items-start justify-between gap-3 py-3">
                   <div>
                     <Link
-                      to={`/providers/${encodeURIComponent(p.id)}`}
+                      to="/providers/$id"
+                      params={{ id: p.id }}
                       className="font-medium hover:underline"
                     >
                       {p.id}

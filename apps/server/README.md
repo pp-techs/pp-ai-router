@@ -34,7 +34,7 @@ GET        /admin/providers/:id/quota[?refresh=true]    GET /admin/credentials/:
 GET        /admin/aliases              PUT|DELETE   /admin/aliases/:alias
 GET|POST   /admin/keys                 GET|PATCH|DELETE /admin/keys/:id
 POST       /admin/keys/:id/limits      DELETE /admin/limits/:id
-GET        /admin/usage                GET /admin/usage/summary?group_by=model|provider|key
+GET        /admin/usage                GET /admin/usage/summary?group_by=model|provider|key   GET /admin/usage/timeline?since=&bucket_ms=[&key_id=]
 GET        /admin/pricing?q=           GET /admin/pricing/lookup?model=   GET|POST /admin/pricing/sync
 GET|PUT|DELETE /admin/pricing/overrides
 ```

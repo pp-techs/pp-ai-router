@@ -20,6 +20,7 @@ export const qk = {
   usage: (filter: UsageFilter) => ["usage", "events", filter] as const,
   usageEvents: ["usage", "events"] as const,
   usageSummary: (group: UsageGroup, range: string) => ["usage", "summary", group, range] as const,
+  usageTimeline: (range: string) => ["usage", "timeline", range] as const,
   prices: (q: string) => ["pricing", "search", q] as const,
   priceLookup: (model: string) => ["pricing", "lookup", model] as const,
   pricingSync: ["pricing", "sync"] as const,

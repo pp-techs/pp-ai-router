@@ -1,7 +1,7 @@
 import { createModal } from "@buiducnhat/better-modal";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Provider } from "@/api/types";
@@ -61,7 +61,7 @@ function CreateProviderForm({ onDone, onCancel }: { onDone: () => void; onCancel
     success: (_, body) => `Provider "${body.id}" created.`,
     onSuccess: (_, body) => {
       onDone();
-      void navigate(`/providers/${encodeURIComponent(body.id)}`);
+      void navigate({ to: "/providers/$id", params: { id: body.id } });
     },
   });
 

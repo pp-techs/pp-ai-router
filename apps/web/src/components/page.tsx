@@ -1,52 +1,19 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link } from "react-router";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-
-export interface Crumb {
-  label: string;
-  /** Omit on the current page. */
-  to?: string;
-}
 
 export function PageHeader({
   title,
   description,
   actions,
-  breadcrumbs,
 }: {
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
-  breadcrumbs?: Crumb[];
 }) {
   return (
-    <header className="mb-6 flex flex-col gap-3">
-      {breadcrumbs && (
-        <Breadcrumb>
-          <BreadcrumbList>
-            {breadcrumbs.map((c, i) => (
-              <BreadcrumbItem key={c.label}>
-                {i > 0 && <BreadcrumbSeparator />}
-                {c.to ? (
-                  <BreadcrumbLink render={<Link to={c.to} />}>{c.label}</BreadcrumbLink>
-                ) : (
-                  <BreadcrumbPage>{c.label}</BreadcrumbPage>
-                )}
-              </BreadcrumbItem>
-            ))}
-          </BreadcrumbList>
-        </Breadcrumb>
-      )}
+    <header className="mb-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold tracking-tight">{title}</h1>

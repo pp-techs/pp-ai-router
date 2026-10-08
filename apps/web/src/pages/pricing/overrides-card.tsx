@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { PlusIcon, TagIcon } from "lucide-react";
+import { PencilIcon, PlusIcon, TagIcon, Trash2Icon } from "lucide-react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Price } from "@/api/types";
@@ -58,27 +58,23 @@ export function OverridesCard({
         {(list) => (
           <PriceTable
             prices={list}
-            actions={(p) => (
-              <div className="flex justify-end gap-2">
-                <Button size="sm" variant="outline" onClick={() => onEdit(p)}>
-                  Edit
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() =>
+            actions={(p) => [
+              [{ label: "Edit", icon: PencilIcon, onSelect: () => onEdit(p) }],
+              [
+                {
+                  label: "Delete",
+                  icon: Trash2Icon,
+                  destructive: true,
+                  onSelect: () =>
                     void ConfirmModal.show({
                       title: `Delete override for ${p.model}?`,
                       message: "Billing falls back to the fetched price for this model, if any.",
                       confirmLabel: "Delete override",
                       action: () => remove.mutateAsync(p.model),
-                    })
-                  }
-                >
-                  Delete
-                </Button>
-              </div>
-            )}
+                    }),
+                },
+              ],
+            ]}
           />
         )}
       </QueryBoundary>
