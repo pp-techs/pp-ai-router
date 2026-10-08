@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.4.0] — 2026-10-08
+
+Admin UI: migrate to TanStack Router with file-based routes, adopt the shadcn `sidebar-08` inset layout (collapsible sidebar, header breadcrumb, user menu), move global settings (pricing, appearance, account) into a `sidebar-13` settings dialog opened with `?settings=`, replace the flat per-row buttons in tables with a dropdown menu (API keys are now a table too), and add a usage chart (requests, tokens or cost over time) on the Usage and Overview pages. Server: `GET /admin/usage/timeline` returns usage bucketed by `bucket_ms`.
+
 ## [0.3.0] — 2026-10-08
 
 Admin UI redesign following the Stitch design (shadcn base-nova, olive): a 240px sidebar with icons and a mobile nav sheet, breadcrumb page headers, status badges with a dot, empty states with icons and actions, a provider and alias filter, a totals row in the usage summary, and a restyled sign-in page.
