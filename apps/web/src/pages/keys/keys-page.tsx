@@ -1,3 +1,4 @@
+import { KeyRoundIcon, PlusIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
@@ -30,14 +31,28 @@ export function KeysPage() {
       <PageHeader
         title="API keys"
         description="Virtual keys handed to clients. Each can restrict models, expire, and carry spend or usage limits."
-        actions={<Button onClick={() => void createKey()}>Create key</Button>}
+        actions={
+          <Button onClick={() => void createKey()}>
+            <PlusIcon data-icon="inline-start" />
+            Create key
+          </Button>
+        }
       />
       <QueryBoundary
         query={keys}
         isEmpty={(list) => list.length === 0}
         empty={
           <Panel>
-            <EmptyState title="No API keys yet">
+            <EmptyState
+              title="No API keys yet"
+              icon={KeyRoundIcon}
+              action={
+                <Button onClick={() => void createKey()}>
+                  <PlusIcon data-icon="inline-start" />
+                  Create key
+                </Button>
+              }
+            >
               Create one to start sending requests through the router.
             </EmptyState>
           </Panel>

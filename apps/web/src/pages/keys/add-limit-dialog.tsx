@@ -55,7 +55,13 @@ function AddLimitForm({
 
 /** Resolves `true` once the limit was added, `false` if dismissed. */
 export const AddLimitModal = createModal<Props, boolean>("add-limit", ({ apiKey, modal }) => (
-  <ModalDialog modal={modal} dismissed={false} title={`Add limit to ${apiKey.name}`} wide>
+  <ModalDialog
+    modal={modal}
+    dismissed={false}
+    title={`Add limit to ${apiKey.name}`}
+    description="Cap spend or usage for this key over a fixed or rolling window."
+    wide
+  >
     <AddLimitForm apiKey={apiKey} onDone={modal.resolve} />
   </ModalDialog>
 ));

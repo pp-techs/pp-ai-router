@@ -23,7 +23,7 @@ export const CreatedKeyModal = createModal<Props, void>("created-key", ({ create
         Copy this key now. It is shown only once and cannot be recovered later.
       </AlertDescription>
     </Alert>
-    <div className="flex items-center gap-2 rounded-lg bg-muted p-3">
+    <div className="flex items-start gap-2 rounded-lg border border-border bg-muted p-3">
       <code className="min-w-0 flex-1 font-mono text-xs break-all select-all">{created.key}</code>
       <CopyButton text={created.key} />
     </div>

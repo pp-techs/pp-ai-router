@@ -85,7 +85,9 @@ export function CredentialsTable({ credentials }: { credentials: Credential[] })
               </TableCell>
               <TableCell className="text-right tabular-nums">{c.rpm_limit ?? "—"}</TableCell>
               <TableCell className="max-w-56 whitespace-normal">
-                <StatusBadge tone={HEALTH_TONE[health]}>{health}</StatusBadge>
+                <StatusBadge dot tone={HEALTH_TONE[health]}>
+                  {health}
+                </StatusBadge>
                 {c.last_error && (
                   <p className="mt-1 text-xs break-words text-destructive" title={c.last_error}>
                     {c.last_error}

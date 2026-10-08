@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { ChartColumnIcon } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
@@ -40,8 +41,12 @@ export function UsageSummaryCard({ keys }: { keys: VirtualKey[] | undefined }) {
     <Panel
       title="Summary"
       flush
+      description="Aggregated metrics by model, provider or API key."
       actions={
         <>
+          <span aria-hidden className="text-xs text-muted-foreground">
+            Group by
+          </span>
           <OptionSelect
             aria-label="Group by"
             className="w-auto min-w-32"
@@ -52,6 +57,9 @@ export function UsageSummaryCard({ keys }: { keys: VirtualKey[] | undefined }) {
               label: `By ${label.toLowerCase()}`,
             }))}
           />
+          <span aria-hidden className="text-xs text-muted-foreground">
+            Time range
+          </span>
           <OptionSelect
             aria-label="Time range"
             className="w-auto min-w-32"
@@ -65,13 +73,14 @@ export function UsageSummaryCard({ keys }: { keys: VirtualKey[] | undefined }) {
       <QueryBoundary
         query={summary}
         isEmpty={(s) => s.data.length === 0}
-        empty={<EmptyState title="No usage in this period" />}
+        empty={<EmptyState icon={ChartColumnIcon} title="No usage in this period" />}
       >
         {(s) => (
           <SummaryTable
             rows={s.data}
             groupLabel={GROUPS[group]}
             nameOf={group === "key" ? keyName : undefined}
+            showTotals
           />
         )}
       </QueryBoundary>

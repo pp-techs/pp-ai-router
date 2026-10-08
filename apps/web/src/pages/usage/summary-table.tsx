@@ -4,6 +4,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -27,11 +28,15 @@ export function SummaryTable({
   rows,
   groupLabel,
   nameOf = (group) => group,
+  showTotals = false,
 }: {
   rows: UsageSummaryRow[];
   groupLabel: string;
   nameOf?: (group: string) => string;
+  /** Bold totals row; only for tables that list every group of the period. */
+  showTotals?: boolean;
 }) {
+  const totals = showTotals ? summaryTotals(rows) : null;
   return (
     <Table>
       <TableHeader>
@@ -61,6 +66,28 @@ export function SummaryTable({
           </TableRow>
         ))}
       </TableBody>
+      {totals && (
+        <TableFooter>
+          <TableRow>
+            <TableCell className="font-semibold">
+              Total ({formatInt(rows.length)} {groupLabel.toLowerCase()}
+              {rows.length === 1 ? "" : "s"})
+            </TableCell>
+            <TableCell className="text-right font-semibold tabular-nums">
+              {formatInt(totals.requests)}
+            </TableCell>
+            <TableCell className="text-right font-semibold tabular-nums">
+              {formatInt(totals.input_tokens)}
+            </TableCell>
+            <TableCell className="text-right font-semibold tabular-nums">
+              {formatInt(totals.output_tokens)}
+            </TableCell>
+            <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">
+              {formatUsd(totals.cost_usd)}
+            </TableCell>
+          </TableRow>
+        </TableFooter>
+      )}
     </Table>
   );
 }

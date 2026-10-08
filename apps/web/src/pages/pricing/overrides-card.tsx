@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { PlusIcon, TagIcon } from "lucide-react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Price } from "@/api/types";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PriceTable } from "./price-table";
 
@@ -22,21 +24,32 @@ export function OverridesCard({
     success: "Override deleted.",
   });
 
+  const newButton = (
+    <Button size="sm" onClick={onNew}>
+      <PlusIcon data-icon="inline-start" />
+      New override
+    </Button>
+  );
+
   return (
     <Panel
-      title="Overrides"
-      flush
-      actions={
-        <Button size="sm" onClick={onNew}>
-          New override
-        </Button>
+      title={
+        <span className="flex items-center gap-2">
+          Overrides
+          {overrides.data && overrides.data.length > 0 && (
+            <Badge variant="secondary">{overrides.data.length} configured</Badge>
+          )}
+        </span>
       }
+      description="Custom rates configured by operators. Overrides take precedence over fetched prices."
+      flush
+      actions={newButton}
     >
       <QueryBoundary
         query={overrides}
         isEmpty={(list) => list.length === 0}
         empty={
-          <EmptyState title="No overrides">
+          <EmptyState icon={TagIcon} title="No overrides">
             Overrides take precedence over fetched prices, e.g. for negotiated rates or private
             models.
           </EmptyState>

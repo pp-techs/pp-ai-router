@@ -1,4 +1,5 @@
 import { createModal } from "@buiducnhat/better-modal";
+import { PlusIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
@@ -70,7 +71,7 @@ function CreateKeyForm({ onDone }: { onDone: (key: CreatedKey | null) => void })
           <p className="text-muted-foreground">No limits: this key is unrestricted.</p>
         )}
         {limits.map((draft, i) => (
-          <div key={i} className="grid gap-2 rounded-lg border border-border p-3">
+          <div key={i} className="grid gap-2 rounded-lg border border-border bg-muted/40 p-3">
             <LimitFields
               draft={draft}
               onChange={(patch) => {
@@ -102,6 +103,7 @@ function CreateKeyForm({ onDone }: { onDone: (key: CreatedKey | null) => void })
             disabled={limits.length >= 20}
             onClick={() => setLimits((l) => [...l, emptyLimitDraft()])}
           >
+            <PlusIcon data-icon="inline-start" />
             Add limit
           </Button>
         </div>
@@ -125,7 +127,13 @@ function CreateKeyForm({ onDone }: { onDone: (key: CreatedKey | null) => void })
 export const CreateKeyModal = createModal<Record<string, unknown>, CreatedKey | null>(
   "create-key",
   ({ modal }) => (
-    <ModalDialog modal={modal} dismissed={null} title="Create API key" wide>
+    <ModalDialog
+      modal={modal}
+      dismissed={null}
+      title="Create API key"
+      description="Provision a virtual key with scoped models and granular rate or spend limits."
+      wide
+    >
       <CreateKeyForm onDone={modal.resolve} />
     </ModalDialog>
   ),
