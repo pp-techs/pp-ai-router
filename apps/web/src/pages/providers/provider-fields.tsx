@@ -22,7 +22,16 @@ const STRATEGY_HINTS: Record<Strategy, string> = {
   random: "A uniformly random credential.",
 };
 
-const STRATEGY_OPTIONS = STRATEGIES.map((s) => ({ value: s, label: s }));
+const STRATEGY_LABELS: Record<Strategy, string> = {
+  round_robin: "Round robin",
+  weighted: "Weighted",
+  least_inflight: "Least in flight",
+  least_used: "Least used",
+  fill_first: "Fill first",
+  random: "Random",
+};
+
+const STRATEGY_OPTIONS = STRATEGIES.map((s) => ({ value: s, label: STRATEGY_LABELS[s] }));
 
 export function ProviderSettingsFields({
   draft,

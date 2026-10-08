@@ -4,15 +4,19 @@ import type { ModelInfo } from "../adapter.ts";
 /**
  * Kiro has no discovery endpoint we can call per account, so this is a fixed list. Context windows
  * are the ones Kiro documents. Any other id still works as `kiro/<id>` (the router passes unknown
- * ids through); the reference also lists a few ids announced but not yet served by Kiro, which are
- * deliberately left out here because requests for them fail upstream.
+ * ids through); the reference also lists ids announced but not yet in Kiro's catalog (GPT-6 Sol/Luna,
+ * GPT-6.1 Sol), which are deliberately left out here because requests for them fail upstream. Checked
+ * against https://kiro.dev/docs/models/ (updated 2026-10-08). Claude Fable 5.1 (Enterprise-only
+ * preview, us-east-1) is not listed either.
  */
 export const KIRO_MODELS: readonly ModelInfo[] = [
   { id: "kiro-auto" },
   { id: "gpt-5.6-sol", contextWindow: 1_000_000 },
   { id: "gpt-5.6-terra", contextWindow: 1_000_000 },
   { id: "gpt-5.6-luna", contextWindow: 1_000_000 },
+  { id: "claude-sonnet-5.5", contextWindow: 1_000_000 },
   { id: "claude-sonnet-5", contextWindow: 1_000_000 },
+  { id: "claude-opus-5.5", contextWindow: 1_000_000 },
   { id: "claude-opus-5", contextWindow: 1_000_000 },
   { id: "claude-opus-4.8", contextWindow: 1_000_000 },
   { id: "claude-opus-4.7", contextWindow: 1_000_000 },
