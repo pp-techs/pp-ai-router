@@ -1,21 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { api } from "../../api/client.ts";
-import { qk } from "../../api/queries.ts";
-import type {
-  Provider,
-  UsageEvent,
-  UsageFilter,
-  UsageStatus,
-  VirtualKey,
-} from "../../api/types.ts";
-import { Badge, type Tone } from "../../components/badge.tsx";
-import { Button } from "../../components/button.tsx";
-import { Field, Input, Select } from "../../components/fields.tsx";
-import { Card } from "../../components/page.tsx";
-import { EmptyState, QueryBoundary } from "../../components/query-state.tsx";
-import { Table, Td, Th, Tr } from "../../components/table.tsx";
-import { formatDateTime, formatInt, formatLatency, formatUsd } from "../../lib/format.ts";
+import { api } from "@/api/client";
+import { qk } from "@/api/queries";
+import type { Provider, UsageEvent, UsageFilter, UsageStatus, VirtualKey } from "@/api/types";
+import { FormField } from "@/components/form-field";
+import { OptionSelect } from "@/components/option-select";
+import { Panel } from "@/components/page";
+import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { StatusBadge, type Tone } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDateTime, formatInt, formatLatency, formatUsd } from "@/lib/format";
 
 const PAGE_SIZE = 50;
 
@@ -40,38 +43,40 @@ const toFilter = (draft: Draft): UsageFilter => ({
 
 function EventRow({ event, keyName }: { event: UsageEvent; keyName: string }) {
   return (
-    <Tr>
-      <Td className="text-xs whitespace-nowrap">{formatDateTime(event.ts)}</Td>
-      <Td>{keyName}</Td>
-      <Td>{event.provider_id}</Td>
-      <Td className="min-w-36 font-mono text-xs break-all">
+    <TableRow>
+      <TableCell className="text-xs whitespace-nowrap">{formatDateTime(event.ts)}</TableCell>
+      <TableCell>{keyName}</TableCell>
+      <TableCell>{event.provider_id}</TableCell>
+      <TableCell className="min-w-36 font-mono text-xs break-all">
         {event.model}
         {event.upstream_model !== event.model && (
-          <p className="text-muted">→ {event.upstream_model}</p>
+          <p className="text-muted-foreground">→ {event.upstream_model}</p>
         )}
-      </Td>
-      <Td className="text-right whitespace-nowrap tabular-nums">
+      </TableCell>
+      <TableCell className="text-right whitespace-nowrap tabular-nums">
         {formatInt(event.input_tokens)} in · {formatInt(event.output_tokens)} out
         {event.cached_tokens > 0 && (
-          <p className="text-xs text-muted">{formatInt(event.cached_tokens)} cached</p>
+          <p className="text-xs text-muted-foreground-foreground">
+            {formatInt(event.cached_tokens)} cached
+          </p>
         )}
-      </Td>
-      <Td className="text-right whitespace-nowrap tabular-nums">
+      </TableCell>
+      <TableCell className="text-right whitespace-nowrap tabular-nums">
         {formatUsd(event.cost_usd)}
         {event.price_source === "unknown" && (
           <p>
-            <Badge tone="warn">unpriced</Badge>
+            <StatusBadge tone="warn">unpriced</StatusBadge>
           </p>
         )}
-      </Td>
-      <Td>
-        <Badge tone={STATUS_TONE[event.status]}>{event.status}</Badge>
-        {event.stream === 1 && <p className="text-xs text-muted">stream</p>}
-      </Td>
-      <Td className="text-right whitespace-nowrap tabular-nums">
+      </TableCell>
+      <TableCell>
+        <StatusBadge tone={STATUS_TONE[event.status]}>{event.status}</StatusBadge>
+        {event.stream === 1 && <p className="text-xs text-muted-foreground-foreground">stream</p>}
+      </TableCell>
+      <TableCell className="text-right whitespace-nowrap tabular-nums">
         {formatLatency(event.latency_ms)}
-      </Td>
-    </Tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -113,45 +118,41 @@ export function UsageLedgerCard({
   const rows = events.data ?? [];
 
   return (
-    <Card title="Ledger" flush>
-      <form onSubmit={apply} className="flex flex-wrap items-end gap-3 border-b border-line p-4">
-        <Field label="API key" className="min-w-40">
-          <Select
+    <Panel title="Ledger" flush>
+      <form onSubmit={apply} className="flex flex-wrap items-end gap-3 border-b border-border p-4">
+        <FormField label="API key" className="w-auto min-w-40">
+          <OptionSelect
             value={draft.key_id}
-            onChange={(e) => setDraft((d) => ({ ...d, key_id: e.target.value }))}
-          >
-            <option value="">All keys</option>
-            {keys?.map((k) => (
-              <option key={k.id} value={k.id}>
-                {k.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Provider" className="min-w-40">
-          <Select
+            onValueChange={(v) => setDraft((d) => ({ ...d, key_id: v }))}
+            options={[
+              { value: "", label: "All keys" },
+              ...(keys?.map((k) => ({ value: k.id, label: k.name })) ?? []),
+            ]}
+          />
+        </FormField>
+        <FormField label="Provider" className="w-auto min-w-40">
+          <OptionSelect
             value={draft.provider_id}
-            onChange={(e) => setDraft((d) => ({ ...d, provider_id: e.target.value }))}
-          >
-            <option value="">All providers</option>
-            {providers?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.id}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Model (exact)" className="min-w-48">
+            onValueChange={(v) => setDraft((d) => ({ ...d, provider_id: v }))}
+            options={[
+              { value: "", label: "All providers" },
+              ...(providers?.map((p) => ({ value: p.id, label: p.id })) ?? []),
+            ]}
+          />
+        </FormField>
+        <FormField label="Model (exact)" className="w-auto min-w-48">
           <Input
             value={draft.model}
             placeholder="e.g. fast"
             onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
           />
-        </Field>
-        <Button type="submit" variant="primary">
-          Apply
-        </Button>
-        {hasFilter && <Button onClick={reset}>Clear</Button>}
+        </FormField>
+        <Button type="submit">Apply</Button>
+        {hasFilter && (
+          <Button type="button" variant="outline" onClick={reset}>
+            Clear
+          </Button>
+        )}
       </form>
 
       <QueryBoundary
@@ -164,45 +165,47 @@ export function UsageLedgerCard({
         }
       >
         {(list) => (
-          <Table wide>
-            <thead>
-              <tr>
-                <Th>Time</Th>
-                <Th>Key</Th>
-                <Th>Provider</Th>
-                <Th>Model</Th>
-                <Th className="text-right">Tokens</Th>
-                <Th className="text-right">Cost</Th>
-                <Th>Status</Th>
-                <Th className="text-right">Latency</Th>
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="min-w-176">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>Key</TableHead>
+                <TableHead>Provider</TableHead>
+                <TableHead>Model</TableHead>
+                <TableHead className="text-right">Tokens</TableHead>
+                <TableHead className="text-right">Cost</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Latency</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {list.map((e) => (
                 <EventRow key={e.id} event={e} keyName={keyName(e.key_id)} />
               ))}
-            </tbody>
+            </TableBody>
           </Table>
         )}
       </QueryBoundary>
 
-      <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
         <Button
-          small
+          variant="outline"
+          size="sm"
           disabled={cursors.length === 1}
           onClick={() => setCursors((c) => c.slice(0, -1))}
         >
           ← Newer
         </Button>
-        <span className="text-xs text-muted">Page {cursors.length}</span>
+        <span className="text-xs text-muted-foreground-foreground">Page {cursors.length}</span>
         <Button
-          small
+          variant="outline"
+          size="sm"
           disabled={rows.length < PAGE_SIZE}
           onClick={() => setCursors((c) => [...c, rows[rows.length - 1]!.id])}
         >
           Older →
         </Button>
       </div>
-    </Card>
+    </Panel>
   );
 }

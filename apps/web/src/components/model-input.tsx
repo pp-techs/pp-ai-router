@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useId } from "react";
 import { api } from "../api/client.ts";
 import { qk } from "../api/queries.ts";
-import { Input } from "./fields.tsx";
+import { Input } from "@/components/ui/input";
 
 /**
  * Model id field backed by a provider's known models (native `<datalist>`). It stays free text:

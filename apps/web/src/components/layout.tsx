@@ -1,8 +1,8 @@
 import { Navigate, NavLink, Outlet, useLocation } from "react-router";
-import { auth } from "../api/http.ts";
-import { cx } from "../lib/cx.ts";
-import { useToken } from "../lib/use-token.ts";
-import { Button } from "./button.tsx";
+import { auth } from "@/api/http";
+import { Button } from "@/components/ui/button";
+import { useToken } from "@/lib/use-token";
+import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/", label: "Overview", end: true },
@@ -23,9 +23,9 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen md:grid md:grid-cols-[12rem_1fr]">
-      <aside className="border-b border-line bg-surface md:sticky md:top-0 md:h-screen md:border-r md:border-b-0">
+      <aside className="border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:h-screen md:border-r md:border-b-0">
         <div className="flex items-center justify-between gap-3 px-4 py-3 md:flex-col md:items-stretch md:gap-4 md:py-5">
-          <p className="text-base font-semibold">⇄ AI Router</p>
+          <p className="font-heading text-base font-semibold">⇄ AI Router</p>
           <nav aria-label="Main" className="-mx-1 flex gap-1 overflow-x-auto md:mx-0 md:flex-col">
             {NAV.map((item) => (
               <NavLink
@@ -33,11 +33,11 @@ export function AppLayout() {
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
-                  cx(
+                  cn(
                     "rounded-md px-3 py-2 font-medium whitespace-nowrap",
                     isActive
-                      ? "bg-accent-soft text-accent"
-                      : "text-muted hover:bg-subtle hover:text-fg",
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   )
                 }
               >
@@ -45,7 +45,7 @@ export function AppLayout() {
               </NavLink>
             ))}
           </nav>
-          <Button variant="ghost" small className="md:mt-4 md:justify-start" onClick={auth.clear}>
+          <Button variant="ghost" className="md:mt-4 md:justify-start" onClick={auth.clear}>
             Sign out
           </Button>
         </div>

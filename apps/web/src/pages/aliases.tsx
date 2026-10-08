@@ -1,26 +1,29 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { api } from "../api/client.ts";
-import { qk, useAction } from "../api/queries.ts";
-import type { Alias } from "../api/types.ts";
-import { Badge } from "../components/badge.tsx";
-import { Button } from "../components/button.tsx";
-import { ConfirmDialog } from "../components/dialog.tsx";
-import { Card, PageHeader } from "../components/page.tsx";
-import { EmptyState, QueryBoundary } from "../components/query-state.tsx";
-import { Table, Td, Th, Tr } from "../components/table.tsx";
-import { AliasDialog } from "./alias-dialog.tsx";
+import { api } from "@/api/client";
+import { qk, useAction } from "@/api/queries";
+import { ConfirmModal } from "@/components/confirm-modal";
+import { PageHeader, Panel } from "@/components/page";
+import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { StatusBadge } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { AliasModal } from "./alias-dialog";
 
 export function AliasesPage() {
   const aliases = useQuery({ queryKey: qk.aliases, queryFn: api.aliases });
   const providers = useQuery({ queryKey: qk.providers, queryFn: api.providers });
-  const [editing, setEditing] = useState<Alias | "new" | null>(null);
-  const [deleting, setDeleting] = useState<Alias | null>(null);
 
   const remove = useAction((alias: string) => api.deleteAlias(alias), {
     invalidate: [qk.aliases],
+    inline: true,
     success: "Alias deleted.",
-    onSuccess: () => setDeleting(null),
   });
 
   return (
@@ -36,15 +39,16 @@ export function AliasesPage() {
         }
         actions={
           <Button
-            variant="primary"
             disabled={!providers.data?.length}
-            onClick={() => setEditing("new")}
+            onClick={() =>
+              providers.data && void AliasModal.show({ alias: null, providers: providers.data })
+            }
           >
             New alias
           </Button>
         }
       />
-      <Card flush>
+      <Panel flush>
         <QueryBoundary
           query={aliases}
           isEmpty={(list) => list.length === 0}
@@ -58,25 +62,25 @@ export function AliasesPage() {
         >
           {(list) => (
             <Table>
-              <thead>
-                <tr>
-                  <Th>Alias</Th>
-                  <Th>Targets, in fallback order</Th>
-                  <Th className="text-right">Actions</Th>
-                </tr>
-              </thead>
-              <tbody>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Alias</TableHead>
+                  <TableHead>Targets, in fallback order</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {list.map((a) => (
-                  <Tr key={a.alias}>
-                    <Td className="font-mono font-medium">{a.alias}</Td>
-                    <Td>
+                  <TableRow key={a.alias}>
+                    <TableCell className="font-mono font-medium">{a.alias}</TableCell>
+                    <TableCell>
                       <ol className="grid gap-1">
                         {a.targets.map((t, i) => (
                           <li key={i} className="flex items-center gap-2">
                             <span className="w-20">
-                              <Badge tone={i === 0 ? "accent" : "neutral"}>
+                              <StatusBadge tone={i === 0 ? "accent" : "neutral"}>
                                 {i === 0 ? "primary" : `fallback ${i}`}
-                              </Badge>
+                              </StatusBadge>
                             </span>
                             <span className="font-mono text-xs">
                               {t.provider}/{t.model}
@@ -84,42 +88,44 @@ export function AliasesPage() {
                           </li>
                         ))}
                       </ol>
-                    </Td>
-                    <Td>
+                    </TableCell>
+                    <TableCell>
                       <div className="flex justify-end gap-2">
-                        <Button small onClick={() => setEditing(a)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!providers.data}
+                          onClick={() =>
+                            providers.data &&
+                            void AliasModal.show({ alias: a, providers: providers.data })
+                          }
+                        >
                           Edit
                         </Button>
-                        <Button small variant="danger" onClick={() => setDeleting(a)}>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() =>
+                            void ConfirmModal.show({
+                              title: `Delete alias ${a.alias}?`,
+                              message:
+                                "Clients using this model name will get an error until it is recreated.",
+                              confirmLabel: "Delete alias",
+                              action: () => remove.mutateAsync(a.alias),
+                            })
+                          }
+                        >
                           Delete
                         </Button>
                       </div>
-                    </Td>
-                  </Tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
+              </TableBody>
             </Table>
           )}
         </QueryBoundary>
-      </Card>
-
-      {editing && providers.data && (
-        <AliasDialog
-          alias={editing === "new" ? null : editing}
-          providers={providers.data}
-          onClose={() => setEditing(null)}
-        />
-      )}
-      {deleting && (
-        <ConfirmDialog
-          title={`Delete alias ${deleting.alias}?`}
-          message="Clients using this model name will get an error until it is recreated."
-          confirmLabel="Delete alias"
-          loading={remove.isPending}
-          onConfirm={() => remove.mutate(deleting.alias)}
-          onClose={() => setDeleting(null)}
-        />
-      )}
+      </Panel>
     </>
   );
 }

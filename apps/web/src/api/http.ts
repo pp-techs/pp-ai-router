@@ -1,3 +1,5 @@
+import ky from "ky";
+
 const TOKEN_KEY = "pp-admin-token";
 const listeners = new Set<() => void>();
 
@@ -46,14 +48,18 @@ interface RequestOptions {
   token?: string;
 }
 
-function withQuery(path: string, query: Query | undefined): string {
-  const params = new URLSearchParams();
+/** Blank and undefined values are dropped so optional filters never reach the server as `?q=`. */
+function toSearchParams(query: Query | undefined): Record<string, string> {
+  const params: Record<string, string> = {};
   for (const [key, value] of Object.entries(query ?? {})) {
-    if (value !== undefined && value !== "") params.set(key, String(value));
+    if (value !== undefined && value !== "") params[key] = String(value);
   }
-  const text = params.toString();
-  return text ? `${path}?${text}` : path;
+  return params;
 }
+
+// Status handling and retries belong to this module and TanStack Query, and some admin calls
+// (first model fetch for a provider) legitimately take seconds: no ky retries, no timeout.
+const http = ky.create({ retry: 0, timeout: false, throwHttpErrors: false });
 
 async function errorFrom(response: Response): Promise<ApiError> {
   const body: unknown = await response.json().catch(() => undefined);
@@ -74,14 +80,15 @@ export async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers.authorization = `Bearer ${token}`;
-  if (body !== undefined) headers["content-type"] = "application/json";
 
   let response: Response;
   try {
-    response = await fetch(withQuery(path, query), {
+    response = await http(path, {
       method,
       headers,
-      body: body === undefined ? null : JSON.stringify(body),
+      baseUrl: location.origin,
+      searchParams: toSearchParams(query),
+      json: body,
     });
   } catch {
     throw new ApiError(0, "network_error", "Cannot reach the router. Check that the server is up.");

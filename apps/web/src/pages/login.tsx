@@ -1,10 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
-import { api } from "../api/client.ts";
-import { auth } from "../api/http.ts";
-import { Button } from "../components/button.tsx";
-import { Field, FormError, Input } from "../components/fields.tsx";
-import { useToken } from "../lib/use-token.ts";
+import { api } from "@/api/client";
+import { auth } from "@/api/http";
+import { FormError } from "@/components/form-error";
+import { FormField } from "@/components/form-field";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import { useToken } from "@/lib/use-token";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -33,31 +37,33 @@ export function LoginPage() {
 
   return (
     <div className="grid min-h-screen place-items-center p-4">
-      <form
-        onSubmit={(e) => void submit(e)}
-        className="grid w-full max-w-sm gap-4 rounded-xl border border-line bg-surface p-6 shadow-sm"
-      >
-        <div>
-          <h1 className="text-xl font-semibold">⇄ AI Router</h1>
-          <p className="mt-1 text-muted">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-xl">⇄ AI Router</CardTitle>
+          <CardDescription>
             Sign in with the admin token (the server's ADMIN_TOKEN).
-          </p>
-        </div>
-        <Field label="Admin token">
-          <Input
-            type="password"
-            autoComplete="current-password"
-            required
-            autoFocus
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-        </Field>
-        <FormError error={error} />
-        <Button type="submit" variant="primary" loading={busy}>
-          Sign in
-        </Button>
-      </form>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
+            <FormField label="Admin token">
+              <Input
+                type="password"
+                autoComplete="current-password"
+                required
+                autoFocus
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+              />
+            </FormField>
+            <FormError error={error} />
+            <Button type="submit" disabled={busy}>
+              {busy && <Spinner data-icon="inline-start" />}
+              Sign in
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

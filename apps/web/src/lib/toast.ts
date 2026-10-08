@@ -1,36 +1,8 @@
-import { useSyncExternalStore } from "react";
+import { toast as manager } from "@/components/ui/toast";
 
-export interface Toast {
-  id: number;
-  kind: "success" | "error";
-  message: string;
-}
-
-let toasts: Toast[] = [];
-let nextId = 1;
-const listeners = new Set<() => void>();
-
-function publish(next: Toast[]) {
-  toasts = next;
-  for (const listener of listeners) listener();
-}
-
-function push(kind: Toast["kind"], message: string) {
-  const id = nextId++;
-  publish([...toasts, { id, kind, message }]);
-  setTimeout(() => toast.dismiss(id), kind === "error" ? 8000 : 4000);
-}
-
-/** Module-level store so non-React code (the query client) can raise toasts too. */
+/** App-wide notifications; module-level so non-React code (the query client) can raise them too. */
 export const toast = {
-  success: (message: string) => push("success", message),
-  error: (message: string) => push("error", message),
-  dismiss: (id: number) => publish(toasts.filter((t) => t.id !== id)),
+  success: (message: string) =>
+    manager.add({ description: message, type: "success", timeout: 4000 }),
+  error: (message: string) => manager.add({ description: message, type: "error", timeout: 8000 }),
 };
-
-const subscribe = (listener: () => void) => {
-  listeners.add(listener);
-  return () => void listeners.delete(listener);
-};
-
-export const useToasts = () => useSyncExternalStore(subscribe, () => toasts);

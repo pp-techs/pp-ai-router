@@ -1,9 +1,21 @@
 import { useState } from "react";
-import { METRICS, type LimitMode, type Metric } from "../../api/types.ts";
-import { Field, Input, Select } from "../../components/fields.tsx";
-import { METRIC_LABELS, WINDOW_PRESETS, type LimitDraft } from "../../lib/limits.ts";
+import { METRICS, type LimitMode, type Metric } from "@/api/types";
+import { FormField } from "@/components/form-field";
+import { OptionSelect } from "@/components/option-select";
+import { Input } from "@/components/ui/input";
+import { METRIC_LABELS, WINDOW_PRESETS, type LimitDraft } from "@/lib/limits";
 
 const CUSTOM = "custom";
+
+const METRIC_OPTIONS = METRICS.map((m) => ({ value: m, label: METRIC_LABELS[m] }));
+const WINDOW_OPTIONS = [
+  ...WINDOW_PRESETS.map((w) => ({ value: w, label: w })),
+  { value: CUSTOM, label: "custom…" },
+];
+const MODE_OPTIONS = [
+  { value: "fixed", label: "fixed (UTC)" },
+  { value: "rolling", label: "rolling" },
+];
 
 /** One limit: metric x window x mode x max. The window is a preset or free text such as "90m" or "2w". */
 export function LimitFields({
@@ -17,54 +29,40 @@ export function LimitFields({
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <Field label="Metric">
-        <Select
+      <FormField label="Metric">
+        <OptionSelect
           value={draft.metric}
-          onChange={(e) => onChange({ metric: e.target.value as Metric })}
-        >
-          {METRICS.map((m) => (
-            <option key={m} value={m}>
-              {METRIC_LABELS[m]}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label="Window">
-        <Select
+          options={METRIC_OPTIONS}
+          onValueChange={(v) => onChange({ metric: v as Metric })}
+        />
+      </FormField>
+      <FormField label="Window">
+        <OptionSelect
           value={custom ? CUSTOM : draft.window}
-          onChange={(e) => {
-            const choice = e.target.value;
+          options={WINDOW_OPTIONS}
+          onValueChange={(choice) => {
             setCustom(choice === CUSTOM);
             if (choice !== CUSTOM) onChange({ window: choice });
           }}
-        >
-          {WINDOW_PRESETS.map((w) => (
-            <option key={w} value={w}>
-              {w}
-            </option>
-          ))}
-          <option value={CUSTOM}>custom…</option>
-        </Select>
-      </Field>
-      <Field label="Mode">
-        <Select
+        />
+      </FormField>
+      <FormField label="Mode">
+        <OptionSelect
           value={draft.mode}
-          onChange={(e) => onChange({ mode: e.target.value as LimitMode })}
-        >
-          <option value="fixed">fixed (UTC)</option>
-          <option value="rolling">rolling</option>
-        </Select>
-      </Field>
-      <Field label={draft.metric === "usd" ? "Max (USD)" : "Max"}>
+          options={MODE_OPTIONS}
+          onValueChange={(v) => onChange({ mode: v as LimitMode })}
+        />
+      </FormField>
+      <FormField label={draft.metric === "usd" ? "Max (USD)" : "Max"}>
         <Input
           inputMode="decimal"
           placeholder={draft.metric === "usd" ? "5.00" : "100000"}
           value={draft.max}
           onChange={(e) => onChange({ max: e.target.value })}
         />
-      </Field>
+      </FormField>
       {custom && (
-        <Field
+        <FormField
           label="Custom window"
           hint="<n>m, h, d or w — e.g. 90m, 12h, 2w. Over a day: whole hours."
           className="col-span-2 sm:col-span-4"
@@ -74,7 +72,7 @@ export function LimitFields({
             placeholder="90m"
             onChange={(e) => onChange({ window: e.target.value })}
           />
-        </Field>
+        </FormField>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
+import { CheckIcon, CopyIcon } from "lucide-react";
 import { useState } from "react";
-import { toast } from "../lib/toast.ts";
-import { Button } from "./button.tsx";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/lib/toast";
 
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
@@ -16,8 +17,9 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
   }
 
   return (
-    <Button small onClick={() => void copy()}>
-      {copied ? "Copied ✓" : label}
+    <Button variant="outline" size="sm" onClick={() => void copy()}>
+      {copied ? <CheckIcon data-icon="inline-start" /> : <CopyIcon data-icon="inline-start" />}
+      {copied ? "Copied" : label}
     </Button>
   );
 }

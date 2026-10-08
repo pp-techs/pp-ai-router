@@ -1,5 +1,8 @@
-import { Checkbox, Field, Input } from "../../components/fields.tsx";
-import type { CredentialDraft } from "../../lib/credential-draft.ts";
+import { FormField } from "@/components/form-field";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { CredentialDraft } from "@/lib/credential-draft";
 
 /** Shared by the add-key, edit and OAuth-login dialogs. */
 export function CredentialFields({
@@ -15,7 +18,7 @@ export function CredentialFields({
 }) {
   return (
     <>
-      <Field
+      <FormField
         label={labelRequired ? "Label" : "Label (optional)"}
         hint={labelRequired ? undefined : "Defaults to the account's email."}
       >
@@ -25,9 +28,9 @@ export function CredentialFields({
           value={draft.label}
           onChange={(e) => onChange({ label: e.target.value })}
         />
-      </Field>
+      </FormField>
       <div className="grid grid-cols-3 gap-3">
-        <Field label="Weight" hint="1–1000">
+        <FormField label="Weight" hint="1–1000">
           <Input
             type="number"
             required
@@ -37,8 +40,8 @@ export function CredentialFields({
             value={draft.weight}
             onChange={(e) => onChange({ weight: e.target.value })}
           />
-        </Field>
-        <Field label="Priority" hint="Lower = first">
+        </FormField>
+        <FormField label="Priority" hint="Lower = first">
           <Input
             type="number"
             required
@@ -48,8 +51,8 @@ export function CredentialFields({
             value={draft.priority}
             onChange={(e) => onChange({ priority: e.target.value })}
           />
-        </Field>
-        <Field label="RPM limit" hint="Blank = none">
+        </FormField>
+        <FormField label="RPM limit" hint="Blank = none">
           <Input
             type="number"
             min={1}
@@ -57,21 +60,23 @@ export function CredentialFields({
             value={draft.rpm}
             onChange={(e) => onChange({ rpm: e.target.value })}
           />
-        </Field>
+        </FormField>
       </div>
-      <Field label="Model globs" hint="Comma separated, e.g. gpt-*, o1. Blank = all models.">
+      <FormField label="Model globs" hint="Comma separated, e.g. gpt-*, o1. Blank = all models.">
         <Input
           value={draft.models}
           placeholder="*"
           onChange={(e) => onChange({ models: e.target.value })}
         />
-      </Field>
+      </FormField>
       {showEnabled && (
-        <Checkbox
-          label="Enabled"
-          checked={draft.enabled}
-          onChange={(e) => onChange({ enabled: e.target.checked })}
-        />
+        <Label>
+          <Checkbox
+            checked={draft.enabled}
+            onCheckedChange={(checked) => onChange({ enabled: checked })}
+          />
+          Enabled
+        </Label>
       )}
     </>
   );

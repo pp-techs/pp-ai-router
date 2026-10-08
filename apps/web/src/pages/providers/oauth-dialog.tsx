@@ -1,33 +1,52 @@
+import { createModal } from "@buiducnhat/better-modal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api } from "../../api/client.ts";
-import { qk, useAction } from "../../api/queries.ts";
-import type { OAuthSession, OAuthStart, Provider } from "../../api/types.ts";
-import { Button } from "../../components/button.tsx";
-import { CopyButton } from "../../components/copy-button.tsx";
-import { Dialog, DialogActions } from "../../components/dialog.tsx";
-import { Field, FormError, Textarea } from "../../components/fields.tsx";
-import {
-  draftToBody,
-  emptyCredentialDraft,
-  type CredentialDraft,
-} from "../../lib/credential-draft.ts";
-import { formatDateTime } from "../../lib/format.ts";
-import { toast } from "../../lib/toast.ts";
-import { CredentialFields } from "./credential-fields.tsx";
+import { api } from "@/api/client";
+import { qk, useAction } from "@/api/queries";
+import type { OAuthSession, OAuthStart, Provider } from "@/api/types";
+import { CopyButton } from "@/components/copy-button";
+import { FormError } from "@/components/form-error";
+import { FormField } from "@/components/form-field";
+import { ModalDialog } from "@/components/modal-dialog";
+import { Button } from "@/components/ui/button";
+import { DialogFooter } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import { draftToBody, emptyCredentialDraft, type CredentialDraft } from "@/lib/credential-draft";
+import { formatDateTime } from "@/lib/format";
+import { toast } from "@/lib/toast";
+import { CredentialFields } from "./credential-fields";
 
 type Device = Extract<OAuthStart, { flow: "device" }>;
 type Paste = Extract<OAuthStart, { flow: "paste" }>;
 
-/** Account login for providers whose type supports OAuth: pick settings, start, then follow the device or paste flow. */
-export function OAuthDialog({
+type Props = { provider: Provider; label: string };
+
+/**
+ * Account login for providers whose type supports OAuth: pick settings, start, then follow the
+ * device or paste flow. Resolves `true` once the account was added, `false` if dismissed.
+ */
+export const OAuthModal = createModal<Props, boolean>(
+  "oauth-login",
+  ({ provider, label, modal }) => (
+    <ModalDialog modal={modal} dismissed={false} title={label} wide>
+      <OAuthBody
+        provider={provider}
+        onDone={() => modal.resolve(true)}
+        onCancel={() => modal.resolve(false)}
+      />
+    </ModalDialog>
+  ),
+);
+
+function OAuthBody({
   provider,
-  label,
-  onClose,
+  onDone,
+  onCancel,
 }: {
   provider: Provider;
-  label: string;
-  onClose: () => void;
+  onDone: () => void;
+  onCancel: () => void;
 }) {
   const client = useQueryClient();
   const [draft, setDraft] = useState<CredentialDraft>(emptyCredentialDraft);
@@ -50,43 +69,42 @@ export function OAuthDialog({
   function finished() {
     void client.invalidateQueries({ queryKey: qk.providers });
     toast.success("Account added.");
-    onClose();
+    onDone();
   }
 
-  return (
-    <Dialog title={label} onClose={onClose} wide>
-      {start === null ? (
-        <form
-          className="grid gap-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            begin.mutate();
-          }}
-        >
-          <p className="text-muted">
-            Sign in to an account for <strong className="text-fg">{provider.id}</strong>. These
-            settings apply to the credential it creates.
-          </p>
-          <CredentialFields
-            draft={draft}
-            onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
-            labelRequired={false}
-            showEnabled={false}
-          />
-          <FormError error={begin.error} />
-          <DialogActions>
-            <Button onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary" loading={begin.isPending}>
-              Start sign-in
-            </Button>
-          </DialogActions>
-        </form>
-      ) : start.flow === "device" ? (
-        <DeviceFlow start={start} onDone={finished} onRestart={() => setStart(null)} />
-      ) : (
-        <PasteFlow start={start} onDone={finished} onRestart={() => setStart(null)} />
-      )}
-    </Dialog>
+  return start === null ? (
+    <form
+      className="grid gap-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        begin.mutate();
+      }}
+    >
+      <p className="text-muted-foreground">
+        Sign in to an account for <strong className="text-foreground">{provider.id}</strong>. These
+        settings apply to the credential it creates.
+      </p>
+      <CredentialFields
+        draft={draft}
+        onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+        labelRequired={false}
+        showEnabled={false}
+      />
+      <FormError error={begin.error} />
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={begin.isPending}>
+          {begin.isPending && <Spinner data-icon="inline-start" />}
+          Start sign-in
+        </Button>
+      </DialogFooter>
+    </form>
+  ) : start.flow === "device" ? (
+    <DeviceFlow start={start} onDone={finished} onRestart={() => setStart(null)} />
+  ) : (
+    <PasteFlow start={start} onDone={finished} onRestart={() => setStart(null)} />
   );
 }
 
@@ -94,11 +112,9 @@ function Failure({ message, onRestart }: { message: string; onRestart: () => voi
   return (
     <div className="grid gap-3">
       <FormError error={message} />
-      <DialogActions>
-        <Button variant="primary" onClick={onRestart}>
-          Start over
-        </Button>
-      </DialogActions>
+      <DialogFooter>
+        <Button onClick={onRestart}>Start over</Button>
+      </DialogFooter>
     </div>
   );
 }
@@ -139,29 +155,26 @@ function DeviceFlow({
   const link = start.verification_uri_complete ?? start.verification_uri;
   return (
     <div className="grid gap-4">
-      <ol className="grid list-decimal gap-1 pl-5 text-muted">
+      <ol className="grid list-decimal gap-1 pl-5 text-muted-foreground">
         <li>
           Open{" "}
           <a
             href={link}
             target="_blank"
             rel="noreferrer noopener"
-            className="text-accent underline"
+            className="text-primary underline"
           >
             {start.verification_uri}
           </a>
         </li>
         <li>Enter this code and approve the sign-in:</li>
       </ol>
-      <div className="flex items-center justify-center gap-3 rounded-lg bg-subtle py-5">
+      <div className="flex items-center justify-center gap-3 rounded-lg bg-muted py-5">
         <code className="text-3xl font-semibold tracking-widest select-all">{start.user_code}</code>
         <CopyButton text={start.user_code} />
       </div>
-      <p role="status" className="flex items-center gap-2 text-muted">
-        <span
-          aria-hidden
-          className="size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"
-        />
+      <p role="status" className="flex items-center gap-2 text-muted-foreground">
+        <Spinner aria-hidden />
         Waiting for approval… the code expires {formatDateTime(start.expires_at)}.
       </p>
     </div>
@@ -198,13 +211,13 @@ function PasteFlow({
         complete.mutate(input.trim());
       }}
     >
-      <ol className="grid list-decimal gap-1 pl-5 text-muted">
+      <ol className="grid list-decimal gap-1 pl-5 text-muted-foreground">
         <li>
           <a
             href={start.auth_url}
             target="_blank"
             rel="noreferrer noopener"
-            className="text-accent underline"
+            className="text-primary underline"
           >
             Open the sign-in page
           </a>{" "}
@@ -212,7 +225,7 @@ function PasteFlow({
         </li>
         <li>{start.instructions}</li>
       </ol>
-      <Field
+      <FormField
         label="Redirect URL or code"
         hint={`This sign-in expires ${formatDateTime(start.expires_at)}.`}
       >
@@ -223,14 +236,17 @@ function PasteFlow({
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
-      </Field>
+      </FormField>
       <FormError error={complete.error} />
-      <DialogActions>
-        <Button onClick={onRestart}>Start over</Button>
-        <Button type="submit" variant="primary" loading={complete.isPending}>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onRestart}>
+          Start over
+        </Button>
+        <Button type="submit" disabled={complete.isPending}>
+          {complete.isPending && <Spinner data-icon="inline-start" />}
           Complete sign-in
         </Button>
-      </DialogActions>
+      </DialogFooter>
     </form>
   );
 }

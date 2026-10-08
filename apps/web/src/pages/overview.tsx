@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api/client.ts";
-import { qk } from "../api/queries.ts";
-import { Card, PageHeader, Stat } from "../components/page.tsx";
-import { EmptyState, QueryBoundary } from "../components/query-state.tsx";
-import { formatInt, formatUsd } from "../lib/format.ts";
-import { OverviewPricing } from "./overview-pricing.tsx";
-import { ProviderHealthCard } from "./overview-providers.tsx";
-import { SummaryTable, summaryTotals } from "./usage/summary-table.tsx";
+import { api } from "@/api/client";
+import { qk } from "@/api/queries";
+import { PageHeader, Panel, Stat } from "@/components/page";
+import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { formatInt, formatUsd } from "@/lib/format";
+import { OverviewPricing } from "./overview-pricing";
+import { ProviderHealthCard } from "./overview-providers";
+import { SummaryTable, summaryTotals } from "./usage/summary-table";
 
 const DAY_MS = 86_400_000;
 
@@ -38,7 +38,7 @@ export function OverviewPage() {
       </div>
 
       <div className="grid gap-6">
-        <Card title="Usage by model" flush>
+        <Panel title="Usage by model" flush>
           <QueryBoundary
             query={summary}
             isEmpty={(s) => s.data.length === 0}
@@ -50,7 +50,7 @@ export function OverviewPage() {
           >
             {(s) => <SummaryTable rows={s.data} groupLabel="Model" />}
           </QueryBoundary>
-        </Card>
+        </Panel>
         <div className="grid gap-6 lg:grid-cols-2">
           <ProviderHealthCard />
           <OverviewPricing />

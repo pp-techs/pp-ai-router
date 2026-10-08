@@ -1,8 +1,15 @@
 import type { ReactNode } from "react";
-import type { Price } from "../../api/types.ts";
-import { Badge } from "../../components/badge.tsx";
-import { Table, Td, Th, Tr } from "../../components/table.tsx";
-import { formatPer1m, formatTier } from "../../lib/format.ts";
+import type { Price } from "@/api/types";
+import { StatusBadge } from "@/components/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatPer1m, formatTier } from "@/lib/format";
 
 /** Prices per 1M tokens; `actions` renders an extra cell per row. */
 export function PriceTable({
@@ -13,33 +20,43 @@ export function PriceTable({
   actions?: (price: Price) => ReactNode;
 }) {
   return (
-    <Table wide>
-      <thead>
-        <tr>
-          <Th>Model</Th>
-          <Th>Source</Th>
-          <Th className="text-right">Input / 1M</Th>
-          <Th className="text-right">Output / 1M</Th>
-          <Th className="text-right">Cache read / 1M</Th>
-          <Th className="text-right">Cache write / 1M</Th>
-          <Th>Long-context tiers</Th>
-          {actions && <Th className="text-right">Actions</Th>}
-        </tr>
-      </thead>
-      <tbody>
+    <Table className="min-w-176">
+      <TableHeader>
+        <TableRow>
+          <TableHead>Model</TableHead>
+          <TableHead>Source</TableHead>
+          <TableHead className="text-right">Input / 1M</TableHead>
+          <TableHead className="text-right">Output / 1M</TableHead>
+          <TableHead className="text-right">Cache read / 1M</TableHead>
+          <TableHead className="text-right">Cache write / 1M</TableHead>
+          <TableHead>Long-context tiers</TableHead>
+          {actions && <TableHead className="text-right">Actions</TableHead>}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {prices.map((p) => (
-          <Tr key={`${p.source}:${p.model}`}>
-            <Td className="font-mono text-xs break-all">{p.model}</Td>
-            <Td>
-              <Badge tone={p.source === "override" ? "accent" : "neutral"}>{p.source}</Badge>
-            </Td>
-            <Td className="text-right tabular-nums">{formatPer1m(p.input_per_1m)}</Td>
-            <Td className="text-right tabular-nums">{formatPer1m(p.output_per_1m)}</Td>
-            <Td className="text-right tabular-nums">{formatPer1m(p.cache_read_per_1m)}</Td>
-            <Td className="text-right tabular-nums">{formatPer1m(p.cache_write_per_1m)}</Td>
-            <Td className="text-xs">
+          <TableRow key={`${p.source}:${p.model}`}>
+            <TableCell className="font-mono text-xs break-all whitespace-normal">
+              {p.model}
+            </TableCell>
+            <TableCell>
+              <StatusBadge tone={p.source === "override" ? "accent" : "neutral"}>
+                {p.source}
+              </StatusBadge>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">{formatPer1m(p.input_per_1m)}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatPer1m(p.output_per_1m)}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatPer1m(p.cache_read_per_1m)}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatPer1m(p.cache_write_per_1m)}
+            </TableCell>
+            <TableCell className="text-xs">
               {p.tiers.length === 0 ? (
-                <span className="text-muted">—</span>
+                <span className="text-muted-foreground">—</span>
               ) : (
                 <ul className="grid gap-0.5">
                   {p.tiers.map((t) => (
@@ -47,11 +64,11 @@ export function PriceTable({
                   ))}
                 </ul>
               )}
-            </Td>
-            {actions && <Td className="text-right">{actions(p)}</Td>}
-          </Tr>
+            </TableCell>
+            {actions && <TableCell className="text-right">{actions(p)}</TableCell>}
+          </TableRow>
         ))}
-      </tbody>
+      </TableBody>
     </Table>
   );
 }

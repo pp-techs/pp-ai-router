@@ -1,15 +1,10 @@
-import { useState } from "react";
-import type { Price } from "../../api/types.ts";
-import { PageHeader } from "../../components/page.tsx";
-import { OverrideDialog } from "./override-dialog.tsx";
-import { OverridesCard } from "./overrides-card.tsx";
-import { PriceSearchCard } from "./search-card.tsx";
-import { PricingSyncCard } from "./sync-card.tsx";
+import { PageHeader } from "@/components/page";
+import { OverrideModal } from "./override-dialog";
+import { OverridesCard } from "./overrides-card";
+import { PriceSearchCard } from "./search-card";
+import { PricingSyncCard } from "./sync-card";
 
 export function PricingPage() {
-  // undefined = dialog closed, null = blank form, Price = prefilled (from a search result or an existing override).
-  const [editing, setEditing] = useState<Price | null | undefined>(undefined);
-
   return (
     <>
       <PageHeader
@@ -18,12 +13,12 @@ export function PricingPage() {
       />
       <div className="grid gap-6">
         <PricingSyncCard />
-        <OverridesCard onNew={() => setEditing(null)} onEdit={setEditing} />
-        <PriceSearchCard onOverride={setEditing} />
+        <OverridesCard
+          onNew={() => void OverrideModal.show({ base: null })}
+          onEdit={(price) => void OverrideModal.show({ base: price })}
+        />
+        <PriceSearchCard onOverride={(price) => void OverrideModal.show({ base: price })} />
       </div>
-      {editing !== undefined && (
-        <OverrideDialog base={editing} onClose={() => setEditing(undefined)} />
-      )}
     </>
   );
 }

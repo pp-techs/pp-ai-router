@@ -1,7 +1,14 @@
-import { Badge } from "../../components/badge.tsx";
-import { Table, Td, Th, Tr } from "../../components/table.tsx";
-import type { UsageSummaryRow } from "../../api/types.ts";
-import { formatInt, formatUsd } from "../../lib/format.ts";
+import type { UsageSummaryRow } from "@/api/types";
+import { StatusBadge } from "@/components/status-badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatInt, formatUsd } from "@/lib/format";
 
 export function summaryTotals(rows: UsageSummaryRow[]) {
   return rows.reduce(
@@ -27,33 +34,33 @@ export function SummaryTable({
 }) {
   return (
     <Table>
-      <thead>
-        <tr>
-          <Th>{groupLabel}</Th>
-          <Th className="text-right">Requests</Th>
-          <Th className="text-right">Input tokens</Th>
-          <Th className="text-right">Output tokens</Th>
-          <Th className="text-right">Cost</Th>
-        </tr>
-      </thead>
-      <tbody>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{groupLabel}</TableHead>
+          <TableHead className="text-right">Requests</TableHead>
+          <TableHead className="text-right">Input tokens</TableHead>
+          <TableHead className="text-right">Output tokens</TableHead>
+          <TableHead className="text-right">Cost</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
         {rows.map((r) => (
-          <Tr key={r.group}>
-            <Td className="font-mono text-xs">{nameOf(r.group)}</Td>
-            <Td className="text-right tabular-nums">{formatInt(r.requests)}</Td>
-            <Td className="text-right tabular-nums">{formatInt(r.input_tokens)}</Td>
-            <Td className="text-right tabular-nums">{formatInt(r.output_tokens)}</Td>
-            <Td className="text-right whitespace-nowrap tabular-nums">
+          <TableRow key={r.group}>
+            <TableCell className="font-mono text-xs">{nameOf(r.group)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatInt(r.requests)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatInt(r.input_tokens)}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatInt(r.output_tokens)}</TableCell>
+            <TableCell className="text-right whitespace-nowrap tabular-nums">
               {formatUsd(r.cost_usd)}
               {r.unpriced_requests > 0 && (
                 <span className="ml-2">
-                  <Badge tone="warn">{formatInt(r.unpriced_requests)} unpriced</Badge>
+                  <StatusBadge tone="warn">{formatInt(r.unpriced_requests)} unpriced</StatusBadge>
                 </span>
               )}
-            </Td>
-          </Tr>
+            </TableCell>
+          </TableRow>
         ))}
-      </tbody>
+      </TableBody>
     </Table>
   );
 }

@@ -1,24 +1,19 @@
-import { cx } from "../lib/cx.ts";
+import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 
 /** Horizontal usage meter: turns amber past 80% and red when the limit is reached. */
 export function ProgressBar({ fraction, label }: { fraction: number; label: string }) {
   const percent = Math.round(fraction * 100);
   return (
-    <div
-      role="progressbar"
+    <Progress
+      value={Math.min(percent, 100)}
       aria-label={label}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={percent}
-      className="h-2 w-full overflow-hidden rounded-full bg-subtle"
-    >
-      <div
-        className={cx(
-          "h-full rounded-full transition-[width]",
-          fraction >= 1 ? "bg-danger" : fraction >= 0.8 ? "bg-warn" : "bg-accent",
-        )}
-        style={{ width: `${percent}%` }}
-      />
-    </div>
+      className={cn(
+        "[&_[data-slot=progress-track]]:h-2",
+        fraction >= 1
+          ? "[&_[data-slot=progress-indicator]]:bg-destructive"
+          : fraction >= 0.8 && "[&_[data-slot=progress-indicator]]:bg-amber-500",
+      )}
+    />
   );
 }

@@ -1,27 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { api } from "../../api/client.ts";
-import { qk, useAction } from "../../api/queries.ts";
-import type { Provider } from "../../api/types.ts";
-import { Badge } from "../../components/badge.tsx";
-import { Button } from "../../components/button.tsx";
-import { ConfirmDialog } from "../../components/dialog.tsx";
-import { Card, PageHeader } from "../../components/page.tsx";
-import { EmptyState, QueryBoundary } from "../../components/query-state.tsx";
-import { AddCredentialDialog } from "./credential-dialogs.tsx";
-import { CredentialsTable } from "./credentials-table.tsx";
-import { AliasDialog } from "../alias-dialog.tsx";
-import { ModelsCard } from "./models-card.tsx";
-import { OAuthDialog } from "./oauth-dialog.tsx";
-import { EditProviderDialog } from "./provider-dialogs.tsx";
-
-type Dialog = "edit" | "delete" | "add-key" | "oauth" | null;
+import { api } from "@/api/client";
+import { qk, useAction } from "@/api/queries";
+import type { Provider } from "@/api/types";
+import { ConfirmModal } from "@/components/confirm-modal";
+import { PageHeader, Panel } from "@/components/page";
+import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { StatusBadge } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { AliasModal } from "../alias-dialog";
+import { AddCredentialModal } from "./credential-dialogs";
+import { CredentialsTable } from "./credentials-table";
+import { ModelsCard } from "./models-card";
+import { OAuthModal } from "./oauth-dialog";
+import { EditProviderModal } from "./provider-dialogs";
 
 function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-xs font-medium text-muted">{label}</dt>
+      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 break-all">{children}</dd>
     </div>
   );
@@ -34,7 +33,10 @@ export function ProviderDetailPage() {
 
   return (
     <>
-      <Link to="/providers" className="mb-3 inline-block text-muted hover:text-fg">
+      <Link
+        to="/providers"
+        className="mb-3 inline-block text-muted-foreground hover:text-foreground"
+      >
         ← Providers
       </Link>
       <QueryBoundary
@@ -50,9 +52,6 @@ export function ProviderDetailPage() {
 
 function ProviderView({ provider, providers }: { provider: Provider; providers: Provider[] }) {
   const navigate = useNavigate();
-  const [dialog, setDialog] = useState<Dialog>(null);
-  const [aliasModel, setAliasModel] = useState<string | null>(null);
-  const close = () => setDialog(null);
 
   const types = useQuery({ queryKey: qk.providerTypes, queryFn: api.providerTypes });
   const type = types.data?.find((t) => t.type === provider.type);
@@ -69,6 +68,7 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
   const remove = useAction(() => api.deleteProvider(provider.id), {
     invalidate: [qk.providers],
     success: "Provider deleted.",
+    inline: true,
     onSuccess: () => void navigate("/providers"),
   });
 
@@ -79,23 +79,37 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
         description={type?.label ?? provider.type}
         actions={
           <>
-            <Button onClick={() => setDialog("edit")}>Edit settings</Button>
-            <Button onClick={() => toggle.mutate()} loading={toggle.isPending}>
+            <Button variant="outline" onClick={() => void EditProviderModal.show({ provider })}>
+              Edit settings
+            </Button>
+            <Button variant="outline" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+              {toggle.isPending && <Spinner data-icon="inline-start" />}
               {provider.enabled ? "Disable" : "Enable"}
             </Button>
-            <Button variant="danger" onClick={() => setDialog("delete")}>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                void ConfirmModal.show({
+                  title: `Delete ${provider.id}?`,
+                  message:
+                    "Its credentials are deleted with it and aliases pointing here stop resolving. Usage history is kept.",
+                  confirmLabel: "Delete provider",
+                  action: () => remove.mutateAsync(),
+                })
+              }
+            >
               Delete
             </Button>
           </>
         }
       />
 
-      <Card className="mb-6">
+      <Panel className="mb-6">
         <dl className="grid grid-cols-2 gap-4 lg:grid-cols-5">
           <Detail label="Status">
-            <Badge tone={provider.enabled ? "ok" : "neutral"}>
+            <StatusBadge tone={provider.enabled ? "ok" : "neutral"}>
               {provider.enabled ? "enabled" : "disabled"}
-            </Badge>
+            </StatusBadge>
           </Detail>
           <Detail label="Base URL">
             <span className="font-mono text-xs">{provider.base_url}</span>
@@ -106,19 +120,31 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
           </Detail>
           <Detail label="Max attempts">{provider.max_key_attempts}</Detail>
         </dl>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="Credentials"
         flush
         actions={
           <>
             {provider.oauth && (
-              <Button small onClick={() => setDialog("oauth")}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  void OAuthModal.show({
+                    provider,
+                    label: type?.oauth?.label ?? "Sign in with account",
+                  })
+                }
+              >
                 {type?.oauth?.label ?? "Sign in with account"}
               </Button>
             )}
-            <Button small variant="primary" onClick={() => setDialog("add-key")}>
+            <Button
+              size="sm"
+              onClick={() => void AddCredentialModal.show({ providerId: provider.id })}
+            >
               Add API key
             </Button>
           </>
@@ -135,39 +161,21 @@ function ProviderView({ provider, providers }: { provider: Provider; providers: 
         >
           {(list) => <CredentialsTable credentials={list} />}
         </QueryBoundary>
-      </Card>
+      </Panel>
 
       <div className="mt-6">
-        <ModelsCard provider={provider} type={type} onCreateAlias={setAliasModel} />
-      </div>
-
-      {aliasModel !== null && (
-        <AliasDialog
-          alias={null}
-          firstTarget={{ provider: provider.id, model: aliasModel }}
-          providers={providers}
-          onClose={() => setAliasModel(null)}
-        />
-      )}
-      {dialog === "edit" && <EditProviderDialog provider={provider} onClose={close} />}
-      {dialog === "add-key" && <AddCredentialDialog providerId={provider.id} onClose={close} />}
-      {dialog === "oauth" && (
-        <OAuthDialog
+        <ModelsCard
           provider={provider}
-          label={type?.oauth?.label ?? "Sign in with account"}
-          onClose={close}
+          type={type}
+          onCreateAlias={(model) =>
+            void AliasModal.show({
+              alias: null,
+              firstTarget: { provider: provider.id, model },
+              providers,
+            })
+          }
         />
-      )}
-      {dialog === "delete" && (
-        <ConfirmDialog
-          title={`Delete ${provider.id}?`}
-          message="Its credentials are deleted with it and aliases pointing here stop resolving. Usage history is kept."
-          confirmLabel="Delete provider"
-          loading={remove.isPending}
-          onConfirm={() => remove.mutate()}
-          onClose={close}
-        />
-      )}
+      </div>
     </>
   );
 }

@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { api } from "../../api/client.ts";
-import { qk } from "../../api/queries.ts";
-import type { UsageGroup, VirtualKey } from "../../api/types.ts";
-import { Select } from "../../components/fields.tsx";
-import { Card } from "../../components/page.tsx";
-import { EmptyState, QueryBoundary } from "../../components/query-state.tsx";
-import { SummaryTable } from "./summary-table.tsx";
+import { api } from "@/api/client";
+import { qk } from "@/api/queries";
+import type { UsageGroup, VirtualKey } from "@/api/types";
+import { OptionSelect } from "@/components/option-select";
+import { Panel } from "@/components/page";
+import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { SummaryTable } from "./summary-table";
 
 const HOUR = 3_600_000;
 const RANGES: Record<string, { label: string; ms: number | null }> = {
@@ -37,29 +37,28 @@ export function UsageSummaryCard({ keys }: { keys: VirtualKey[] | undefined }) {
     keys?.find((k) => k.id === id)?.name ?? `${id.slice(0, 8)}… (deleted)`;
 
   return (
-    <Card
+    <Panel
       title="Summary"
       flush
       actions={
         <>
-          <Select
+          <OptionSelect
             aria-label="Group by"
+            className="w-auto min-w-32"
             value={group}
-            onChange={(e) => setGroup(e.target.value as UsageGroup)}
-          >
-            {Object.entries(GROUPS).map(([value, label]) => (
-              <option key={value} value={value}>
-                By {label.toLowerCase()}
-              </option>
-            ))}
-          </Select>
-          <Select aria-label="Time range" value={range} onChange={(e) => setRange(e.target.value)}>
-            {Object.entries(RANGES).map(([value, { label }]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
+            onValueChange={(v) => setGroup(v as UsageGroup)}
+            options={Object.entries(GROUPS).map(([value, label]) => ({
+              value,
+              label: `By ${label.toLowerCase()}`,
+            }))}
+          />
+          <OptionSelect
+            aria-label="Time range"
+            className="w-auto min-w-32"
+            value={range}
+            onValueChange={setRange}
+            options={Object.entries(RANGES).map(([value, { label }]) => ({ value, label }))}
+          />
         </>
       }
     >
@@ -76,6 +75,6 @@ export function UsageSummaryCard({ keys }: { keys: VirtualKey[] | undefined }) {
           />
         )}
       </QueryBoundary>
-    </Card>
+    </Panel>
   );
 }

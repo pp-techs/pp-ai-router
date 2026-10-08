@@ -61,7 +61,7 @@ Each provider's model list is available from `GET /admin/providers/:id/models` (
 
 ## Anthropic
 
-**Outbound**: provider type `anthropic` (default `base_url` `https://api.anthropic.com/v1`, credentials are API keys sent as `x-api-key` with `anthropic-version: 2023-06-01`). The router's OpenAI request is translated to `POST {base_url}/messages` and the Messages response/SSE back to chat completions, including `reasoning_content`, tool calls and `cache_control` on content parts, tools and messages.
+**Outbound**: provider type `anthropic` (adapted from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex), MIT; default `base_url` `https://api.anthropic.com/v1`, credentials are API keys sent as `x-api-key` with `anthropic-version: 2023-06-01`). The router's OpenAI request is translated to `POST {base_url}/messages` and the Messages response/SSE back to chat completions, including `reasoning_content`, tool calls and `cache_control` on content parts, tools and messages.
 
 - `max_tokens` is mandatory upstream: `max_tokens` / `max_completion_tokens`, else 8192 (or the thinking budget + 8192). `temperature`/`top_p` are clamped to 0..1, and dropped where the model rejects them (thinking enabled, Opus 4.7+, Sonnet 5+).
 - Thinking: `thinking` (Anthropic shape) or `reasoning_effort` select it. Models that only accept adaptive thinking get `thinking: adaptive` + `output_config.effort`; older ones get a `budget_tokens` below `max_tokens`. Signed thinking blocks travel in the non-standard `thinking_blocks` field (response and request) so tool loops keep working; without them a manual-budget request drops thinking instead of failing.

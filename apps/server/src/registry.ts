@@ -82,7 +82,7 @@ export class Registry {
   reload(): void {
     const credentials = new Map<string, CredentialRuntime[]>();
     for (const r of all<CredentialRow>(
-      this.#db.prepare("SELECT * FROM credentials ORDER BY created_at, id"),
+      this.#db.prepare("SELECT * FROM credentials ORDER BY created_at, rowid"),
     )) {
       const list = credentials.get(r.provider_id) ?? [];
       list.push({

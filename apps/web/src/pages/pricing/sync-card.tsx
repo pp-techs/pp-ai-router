@@ -1,14 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../../api/client.ts";
-import { qk, useAction } from "../../api/queries.ts";
-import type { PricingSyncResult } from "../../api/types.ts";
-import { Badge } from "../../components/badge.tsx";
-import { Button } from "../../components/button.tsx";
-import { Card } from "../../components/page.tsx";
-import { EmptyState, QueryBoundary } from "../../components/query-state.tsx";
-import { Table, Td, Th, Tr } from "../../components/table.tsx";
-import { formatDateTime, formatInt } from "../../lib/format.ts";
-import { toast } from "../../lib/toast.ts";
+import { api } from "@/api/client";
+import { qk, useAction } from "@/api/queries";
+import type { PricingSyncResult } from "@/api/types";
+import { Panel } from "@/components/page";
+import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { StatusBadge } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDateTime, formatInt } from "@/lib/format";
+import { toast } from "@/lib/toast";
 
 function describe(results: PricingSyncResult[]): string {
   return results
@@ -32,11 +40,12 @@ export function PricingSyncCard() {
   });
 
   return (
-    <Card
+    <Panel
       title="Price sources"
       flush
       actions={
-        <Button small variant="primary" loading={sync.isPending} onClick={() => sync.mutate()}>
+        <Button size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>
+          {sync.isPending && <Spinner data-icon="inline-start" />}
           Sync now
         </Button>
       }
@@ -52,38 +61,40 @@ export function PricingSyncCard() {
       >
         {(list) => (
           <Table>
-            <thead>
-              <tr>
-                <Th>Source</Th>
-                <Th>Last synced</Th>
-                <Th className="text-right">Models</Th>
-                <Th>Status</Th>
-              </tr>
-            </thead>
-            <tbody>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Source</TableHead>
+                <TableHead>Last synced</TableHead>
+                <TableHead className="text-right">Models</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {list.map((s) => (
-                <Tr key={s.source}>
-                  <Td className="font-medium">{s.source}</Td>
-                  <Td>{s.synced_at === null ? "never" : formatDateTime(s.synced_at)}</Td>
-                  <Td className="text-right tabular-nums">
+                <TableRow key={s.source}>
+                  <TableCell className="font-medium">{s.source}</TableCell>
+                  <TableCell>
+                    {s.synced_at === null ? "never" : formatDateTime(s.synced_at)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
                     {s.model_count === null ? "—" : formatInt(s.model_count)}
-                  </Td>
-                  <Td>
+                  </TableCell>
+                  <TableCell className="whitespace-normal">
                     {s.last_error ? (
                       <>
-                        <Badge tone="danger">error</Badge>
-                        <p className="mt-1 text-xs break-words text-danger">{s.last_error}</p>
+                        <StatusBadge tone="danger">error</StatusBadge>
+                        <p className="mt-1 text-xs break-words text-destructive">{s.last_error}</p>
                       </>
                     ) : (
-                      <Badge tone="ok">ok</Badge>
+                      <StatusBadge tone="ok">ok</StatusBadge>
                     )}
-                  </Td>
-                </Tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
+            </TableBody>
           </Table>
         )}
       </QueryBoundary>
-    </Card>
+    </Panel>
   );
 }

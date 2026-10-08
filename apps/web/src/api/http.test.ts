@@ -14,24 +14,30 @@ function stubSessionStorage() {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-beforeEach(stubSessionStorage);
+beforeEach(() => {
+  stubSessionStorage();
+  vi.stubGlobal("location", { origin: "http://router.test" });
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("request", () => {
   it("sends the bearer token and a JSON body, dropping blank query values", async () => {
     auth.set("secret-token");
-    const fetchMock = vi.fn().mockResolvedValue(json({ id: "p" }, 201));
+    let sentBody = "";
+    const fetchMock = vi.fn(async (sent: Request) => {
+      sentBody = await sent.text();
+      return json({ id: "p" }, 201);
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await request("POST", "/admin/x", { body: { a: 1 }, query: { q: "", before: 7 } });
 
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/admin/x?before=7");
-    expect(init.headers).toMatchObject({
-      authorization: "Bearer secret-token",
-      "content-type": "application/json",
-    });
-    expect(init.body).toBe('{"a":1}');
+    const [sent] = fetchMock.mock.calls[0] as [Request];
+    expect(sent.url).toBe("http://router.test/admin/x?before=7");
+    expect(sent.method).toBe("POST");
+    expect(sent.headers.get("authorization")).toBe("Bearer secret-token");
+    expect(sent.headers.get("content-type")).toContain("application/json");
+    expect(sentBody).toBe('{"a":1}');
   });
 
   it("turns the server's error envelope into an ApiError", async () => {
@@ -107,6 +113,8 @@ describe("api", () => {
 
     expect(await api.aliases()).toEqual([{ alias: "a", targets: [] }]);
     await api.putAlias("team/fast model", [{ provider: "p", model: "m" }]);
-    expect((fetchMock.mock.calls[1] as [string])[0]).toBe("/admin/aliases/team/fast%20model");
+    expect((fetchMock.mock.calls[1] as [Request])[0].url).toBe(
+      "http://router.test/admin/aliases/team/fast%20model",
+    );
   });
 });

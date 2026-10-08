@@ -29,6 +29,7 @@ dist-ssr
 *.sln
 *.sw?
 .agents/
+.mcp.json
 
 # AI agent worktrees
 .claude/worktrees/

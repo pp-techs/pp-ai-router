@@ -1,7 +1,8 @@
+import { ModalContainer } from "@buiducnhat/better-modal";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router";
 import { AppLayout } from "./components/layout.tsx";
-import { Toaster } from "./components/toaster.tsx";
+import { Toaster } from "./components/ui/toast.tsx";
 import { AliasesPage } from "./pages/aliases.tsx";
 import { KeysPage } from "./pages/keys/keys-page.tsx";
 import { LoginPage } from "./pages/login.tsx";
@@ -30,6 +31,7 @@ export function App() {
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>
+        <ModalContainer />
       </BrowserRouter>
       <Toaster />
     </QueryClientProvider>

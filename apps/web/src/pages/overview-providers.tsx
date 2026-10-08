@@ -1,11 +1,11 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import { api } from "../api/client.ts";
-import { qk } from "../api/queries.ts";
-import { Badge, type Tone } from "../components/badge.tsx";
-import { Card } from "../components/page.tsx";
-import { EmptyState, QueryBoundary } from "../components/query-state.tsx";
-import { summarizeHealth, type ProviderHealth } from "../lib/credential-health.ts";
+import { api } from "@/api/client";
+import { qk } from "@/api/queries";
+import { StatusBadge, type Tone } from "@/components/status-badge";
+import { Panel } from "@/components/page";
+import { EmptyState, QueryBoundary } from "@/components/query-state";
+import { summarizeHealth, type ProviderHealth } from "@/lib/credential-health";
 
 const TONE: Record<ProviderHealth, Tone> = {
   healthy: "ok",
@@ -31,10 +31,10 @@ export function ProviderHealthCard() {
   const now = Date.now();
 
   return (
-    <Card
+    <Panel
       title="Provider health"
       actions={
-        <Link to="/providers" className="text-accent hover:underline">
+        <Link to="/providers" className="text-primary hover:underline">
           Manage
         </Link>
       }
@@ -58,19 +58,19 @@ export function ProviderHealthCard() {
                     >
                       {p.id}
                     </Link>
-                    <p className="text-xs text-muted">
+                    <p className="text-xs text-muted-foreground">
                       {health
                         ? `${health.counts.ready} ready · ${health.counts.cooling} cooling · ${health.counts.dead} dead · ${health.counts.disabled} disabled`
                         : `${p.credentials} credentials`}
                     </p>
                   </div>
-                  {health && <Badge tone={TONE[health.state]}>{health.state}</Badge>}
+                  {health && <StatusBadge tone={TONE[health.state]}>{health.state}</StatusBadge>}
                 </li>
               );
             })}
           </ul>
         )}
       </QueryBoundary>
-    </Card>
+    </Panel>
   );
 }

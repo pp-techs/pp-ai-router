@@ -8,6 +8,14 @@ Antigravity), with virtual keys, budgets, multi-credential load balancing and mo
 - [`apps/web`](apps/web/README.md): admin UI (React, Vite, Tailwind)
 - `packages/utils`: starter library
 
+## Credits
+
+The Anthropic, Kiro and Google Antigravity provider adapters (`apps/server/src/providers/`) are adapted from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex) (MIT), a local proxy for Codex and Claude Code. The router, key/budget governance, credential pool, pricing and admin UI are original to this project. See [what was ported](docs/project-pdr/opencodex-origin.md).
+
+## Documentation
+
+Start at [`docs/SUMMARY.md`](docs/SUMMARY.md): architecture, codebase map, code standards, product decisions.
+
 ## Develop
 
 ```bash
@@ -30,3 +38,7 @@ docker compose up -d --build          # or: docker build -t pp-ai-router . && do
 Open `http://localhost:8080`, sign in with `ADMIN_TOKEN`, add a provider, credentials and a virtual key.
 Back up the `/data` volume **and** keep `MASTER_KEY`: it decrypts every stored upstream secret.
 Run a single replica (counters live in SQLite, pool state in memory). The container runs as a non-root user and has a health check on `/healthz`.
+
+## CI and releases
+
+GitHub Actions runs check, tests, build and a Docker smoke test on every PR. Releases use [changesets](https://github.com/changesets/changesets): add one with `bunx changeset`; merging the generated "Version Packages" PR builds, tests and publishes `ghcr.io/pp-techs/pp-ai-router:<version>` (and `latest`) and creates the GitHub Release. See [`docs/code-standard/release-process.md`](docs/code-standard/release-process.md).

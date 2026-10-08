@@ -12,9 +12,11 @@
     "ready": "vp check && vp run -r test && vp run -r build",
     "dev": "vp run web#dev",
     "dev:server": "vp run server#dev",
-    "prepare": "vp config"
+    "prepare": "vp config",
+    "version-packages": "bun scripts/version-packages.ts"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.3",
     "vite": "catalog:",
     "vite-plus": "catalog:"
   },

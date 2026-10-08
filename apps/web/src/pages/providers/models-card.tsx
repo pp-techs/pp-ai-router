@@ -1,17 +1,27 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
-import { api } from "../../api/client.ts";
-import { qk, useAction } from "../../api/queries.ts";
-import type { Provider, ProviderModels, ProviderType } from "../../api/types.ts";
-import { Badge } from "../../components/badge.tsx";
-import { Button } from "../../components/button.tsx";
-import { Input } from "../../components/fields.tsx";
-import { Card } from "../../components/page.tsx";
-import { EmptyState, ErrorState, LoadingState } from "../../components/query-state.tsx";
-import { Table, Td, Th, Tr } from "../../components/table.tsx";
-import { formatDateTime, formatInt, formatPer1m } from "../../lib/format.ts";
-import { filterModels, formatContextWindow } from "../../lib/models.ts";
-import { toast } from "../../lib/toast.ts";
+import { api } from "@/api/client";
+import { qk, useAction } from "@/api/queries";
+import type { Provider, ProviderModels, ProviderType } from "@/api/types";
+import { Panel } from "@/components/page";
+import { EmptyState, ErrorState, LoadingState } from "@/components/query-state";
+import { StatusBadge } from "@/components/status-badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { formatDateTime, formatInt, formatPer1m } from "@/lib/format";
+import { filterModels, formatContextWindow } from "@/lib/models";
+import { toast } from "@/lib/toast";
 
 /** Rows rendered at once: a provider can list thousands of models. */
 const PAGE = 50;
@@ -24,7 +34,7 @@ function Status({ list, count }: { list: ProviderModels; count: number }) {
         ? "Never fetched"
         : `Last fetched ${formatDateTime(list.fetched_at)}`;
   return (
-    <p className="text-xs text-muted">
+    <p className="text-xs text-muted-foreground">
       {formatInt(count)} {count === 1 ? "model" : "models"} · {when}
     </p>
   );
@@ -59,25 +69,22 @@ export function ModelsCard({
   const matches = list ? filterModels(list.data, search) : [];
 
   return (
-    <Card
+    <Panel
       title="Models"
       flush
       actions={
         type?.models === "static" ? (
           <Button
-            small
+            size="sm"
+            variant="outline"
             disabled
             title="This provider's models are built in; there is nothing to refresh."
           >
             Refresh
           </Button>
         ) : fetchable ? (
-          <Button
-            small
-            variant="primary"
-            loading={refresh.isPending}
-            onClick={() => refresh.mutate()}
-          >
+          <Button size="sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+            {refresh.isPending && <Spinner data-icon="inline-start" />}
             Refresh
           </Button>
         ) : null
@@ -89,13 +96,16 @@ export function ModelsCard({
         <ErrorState error={models.error} onRetry={() => void models.refetch()} />
       ) : (
         <>
-          <div className="grid gap-3 border-b border-line p-4">
+          <div className="grid gap-3 border-b border-border p-4">
             {list && <Status list={list} count={list.data.length} />}
             {list?.error && (
-              <p role="alert" className="rounded-md bg-warn-soft px-3 py-2 text-warn">
-                Could not refresh the list: {list.error}
-                {list.data.length > 0 && " Showing the previous list."}
-              </p>
+              <Alert>
+                <TriangleAlertIcon />
+                <AlertDescription>
+                  Could not refresh the list: {list.error}
+                  {list.data.length > 0 && " Showing the previous list."}
+                </AlertDescription>
+              </Alert>
             )}
             {list && list.data.length > 0 && (
               <Input
@@ -122,63 +132,63 @@ export function ModelsCard({
             <EmptyState title={`No models match “${search.trim()}”`} />
           ) : (
             <>
-              <Table wide>
-                <thead>
-                  <tr>
-                    <Th>Model</Th>
-                    <Th className="text-right">Context</Th>
-                    <Th className="text-right">Input / 1M</Th>
-                    <Th className="text-right">Output / 1M</Th>
-                    <Th>Price source</Th>
-                    <Th className="text-right">Actions</Th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table className="min-w-176">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Model</TableHead>
+                    <TableHead className="text-right">Context</TableHead>
+                    <TableHead className="text-right">Input / 1M</TableHead>
+                    <TableHead className="text-right">Output / 1M</TableHead>
+                    <TableHead>Price source</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {matches.slice(0, shown).map((m) => (
-                    <Tr key={m.id}>
-                      <Td className="font-mono text-xs break-all">
+                    <TableRow key={m.id}>
+                      <TableCell className="font-mono text-xs break-all whitespace-normal">
                         {m.id}
-                        {m.name && <p className="font-sans text-muted">{m.name}</p>}
-                      </Td>
-                      <Td className="text-right tabular-nums">
+                        {m.name && <p className="font-sans text-muted-foreground">{m.name}</p>}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {formatContextWindow(m.context_window)}
-                      </Td>
-                      <Td className="text-right tabular-nums">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {formatPer1m(m.price?.input_per_1m ?? null)}
-                      </Td>
-                      <Td className="text-right tabular-nums">
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
                         {formatPer1m(m.price?.output_per_1m ?? null)}
-                      </Td>
-                      <Td>
+                      </TableCell>
+                      <TableCell>
                         {m.price ? (
-                          <Badge tone={m.price.source === "override" ? "accent" : "neutral"}>
+                          <StatusBadge tone={m.price.source === "override" ? "accent" : "neutral"}>
                             {m.price.source}
-                          </Badge>
+                          </StatusBadge>
                         ) : (
                           <span
-                            className="text-muted"
+                            className="text-muted-foreground"
                             title="No price known: requests are billed at $0"
                           >
                             —
                           </span>
                         )}
-                      </Td>
-                      <Td className="text-right">
-                        <Button small onClick={() => onCreateAlias(m.id)}>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button size="sm" variant="outline" onClick={() => onCreateAlias(m.id)}>
                           Create alias
                         </Button>
-                      </Td>
-                    </Tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
+                </TableBody>
               </Table>
               {matches.length > shown && (
-                <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3">
-                  <span className="text-xs text-muted">
+                <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3">
+                  <span className="text-xs text-muted-foreground">
                     Showing {formatInt(shown)} of {formatInt(matches.length)}
                     {search.trim() ? " matches" : ""}
                   </span>
-                  <Button small onClick={() => setShown((n) => n + PAGE)}>
+                  <Button size="sm" variant="outline" onClick={() => setShown((n) => n + PAGE)}>
                     Show more
                   </Button>
                 </div>
@@ -187,6 +197,6 @@ export function ModelsCard({
           )}
         </>
       )}
-    </Card>
+    </Panel>
   );
 }

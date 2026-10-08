@@ -4,15 +4,26 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "ROUTER_URL=http://127.0.0.1:29358 vp dev --port 49224 --strictPort",
+    "dev": "ROUTER_URL=http://127.0.0.1:43523 vp dev --port 43524 --strictPort",
     "build": "tsc && vp build",
     "preview": "vp preview"
   },
   "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@buiducnhat/better-modal": "^0.0.6",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/inter": "^5.3.0",
     "@tanstack/react-query": "^5.104.1",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.4.0",
+    "ky": "^2.1.0",
+    "lucide-react": "^1.52.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router": "^8.4.0"
+    "react-router": "^8.4.0",
+    "shadcn": "^4.21.4",
+    "tw-animate-css": "^1.4.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

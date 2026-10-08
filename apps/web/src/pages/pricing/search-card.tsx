@@ -1,20 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
-import { api } from "../../api/client.ts";
-import { qk } from "../../api/queries.ts";
-import type { Price } from "../../api/types.ts";
-import { Button } from "../../components/button.tsx";
-import { Field, Input } from "../../components/fields.tsx";
-import { Card } from "../../components/page.tsx";
-import {
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  QueryBoundary,
-} from "../../components/query-state.tsx";
-import { ApiError } from "../../api/http.ts";
-import { useDebounced } from "../../lib/use-debounced.ts";
-import { PriceTable } from "./price-table.tsx";
+import { api } from "@/api/client";
+import { ApiError } from "@/api/http";
+import { qk } from "@/api/queries";
+import type { Price } from "@/api/types";
+import { FormField } from "@/components/form-field";
+import { Panel } from "@/components/page";
+import { EmptyState, ErrorState, LoadingState, QueryBoundary } from "@/components/query-state";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useDebounced } from "@/lib/use-debounced";
+import { PriceTable } from "./price-table";
 
 /** Effective price of one model: an override wins over fetched prices. */
 function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
@@ -33,9 +29,9 @@ function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
   }
 
   return (
-    <div className="border-b border-line">
+    <div className="border-b border-border">
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3 p-4">
-        <Field
+        <FormField
           label="Look up the price billing uses for a model (overrides included)"
           className="min-w-64 flex-1"
         >
@@ -44,8 +40,8 @@ function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
             placeholder="e.g. gpt-4o-mini"
             onChange={(e) => setText(e.target.value)}
           />
-        </Field>
-        <Button type="submit" disabled={text.trim() === ""}>
+        </FormField>
+        <Button type="submit" variant="outline" disabled={text.trim() === ""}>
           Look up
         </Button>
       </form>
@@ -54,7 +50,7 @@ function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
           <LoadingState />
         ) : price.isError ? (
           price.error instanceof ApiError && price.error.status === 404 ? (
-            <p className="px-4 pb-4 text-muted">
+            <p className="px-4 pb-4 text-muted-foreground">
               No price known for <code className="font-mono">{model}</code>; it would be billed at
               $0 and flagged unpriced.
             </p>
@@ -65,7 +61,7 @@ function Lookup({ onOverride }: { onOverride: (price: Price) => void }) {
           <PriceTable
             prices={[price.data]}
             actions={(p) => (
-              <Button small onClick={() => onOverride(p)}>
+              <Button size="sm" variant="outline" onClick={() => onOverride(p)}>
                 Override
               </Button>
             )}
@@ -86,17 +82,17 @@ export function PriceSearchCard({ onOverride }: { onOverride: (price: Price) => 
   });
 
   return (
-    <Card title="Fetched prices" flush>
+    <Panel title="Fetched prices" flush>
       <Lookup onOverride={onOverride} />
-      <div className="border-b border-line p-4">
-        <Field label="Search models">
+      <div className="border-b border-border p-4">
+        <FormField label="Search models">
           <Input
             type="search"
             value={query}
             placeholder="e.g. claude, gpt-4o, llama"
             onChange={(e) => setQuery(e.target.value)}
           />
-        </Field>
+        </FormField>
       </div>
       <QueryBoundary
         query={prices}
@@ -111,13 +107,13 @@ export function PriceSearchCard({ onOverride }: { onOverride: (price: Price) => 
           <PriceTable
             prices={list}
             actions={(p) => (
-              <Button small onClick={() => onOverride(p)}>
+              <Button size="sm" variant="outline" onClick={() => onOverride(p)}>
                 Override
               </Button>
             )}
           />
         )}
       </QueryBoundary>
-    </Card>
+    </Panel>
   );
 }
