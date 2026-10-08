@@ -1,5 +1,11 @@
 # server
 
+## 0.4.1
+
+### Patch Changes
+
+- 97ff8c1: Admin UI: scrollbars follow the app theme (light/dark toggle) instead of the OS preference and are thinner; select triggers always show the option label and never fall back to the raw value.
+
 ## 0.4.0
 
 ### Minor Changes
