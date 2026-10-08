@@ -1,0 +1,13 @@
+.git
+.vite-hooks
+.vscode
+.claude
+**/node_modules
+**/dist
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+apps/server/data
+Dockerfile
+compose.yaml
