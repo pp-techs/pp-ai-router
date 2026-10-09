@@ -4,14 +4,15 @@
 
 One SQLite file (`node:sqlite`, WAL, `foreign_keys=ON`, `STRICT` tables). `db/migrate.ts` applies `src/db/migrations/NNN_name.sql` files above `PRAGMA user_version`, each in its own transaction. Current migrations: `001_init.sql`, `002_provider_models.sql`.
 
-| Table(s)                                                  | Holds                                                                                  |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `providers`, `credentials`, `model_aliases`               | Routing config; secrets in `credentials.secret_enc` (AES-256-GCM)                      |
-| `provider_models`, `provider_model_sync`                  | Stored model lists and last sync outcome per provider                                  |
-| `virtual_keys`, `limits`                                  | Client keys (SHA-256 only) and their limits                                            |
-| `usage_buckets`                                           | Pre-aggregated per-key usage: minute buckets (windows <= 1 day), hour buckets (longer) |
-| `usage_events`                                            | Append-only ledger, no foreign keys so history survives key/credential deletion        |
-| `model_prices`, `pricing_overrides`, `pricing_sync_state` | Synced and manual prices (USD per token), sync ETags and errors                        |
+| Table(s)                                                  | Holds                                                                                              |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `providers`, `credentials`, `model_aliases`               | Routing config; secrets in `credentials.secret_enc` (AES-256-GCM)                                  |
+| `provider_models`, `provider_model_sync`                  | Stored model lists and last sync outcome per provider                                              |
+| `disabled_models`                                         | `provider/model` pairs an operator switched off (kept apart: model lists are rewritten on refresh) |
+| `virtual_keys`, `limits`                                  | Client keys (SHA-256 only) and their limits                                                        |
+| `usage_buckets`                                           | Pre-aggregated per-key usage: minute buckets (windows <= 1 day), hour buckets (longer)             |
+| `usage_events`                                            | Append-only ledger, no foreign keys so history survives key/credential deletion                    |
+| `model_prices`, `pricing_overrides`, `pricing_sync_state` | Synced and manual prices (USD per token), sync ETags and errors                                    |
 
 Not persisted: pool health/cooldowns and quota parking, cached quota readings, sticky sessions, pending OAuth logins, Antigravity thought signatures.
 
@@ -21,7 +22,7 @@ Not persisted: pool health/cooldowns and quota parking, cached quota readings, s
 
 ## Pricing
 
-`pricing/sync.ts` pulls LiteLLM and OpenRouter on `PRICING_SYNC_INTERVAL_HOURS` (default 24, ETag-aware, `PRICING_SYNC_ENABLED`). Lookup order: override > litellm > openrouter > unknown (`price_source`).
+`pricing/sync.ts` pulls LiteLLM and OpenRouter on `PRICING_SYNC_INTERVAL_HOURS` (default 24, ETag-aware, `PRICING_SYNC_ENABLED`). Lookup order: override > litellm > openrouter > unknown (`price_source`). Exact ids are tried first; if none match, `pricing/aliases.ts` derives other spellings (`5.5` vs `5-5`, a dropped `.0`, the `anthropic/`-style vendor prefix, DeepSeek's `v`) and the same order applies to them.
 
 ## Process model
 

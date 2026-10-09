@@ -1,5 +1,6 @@
 import type { StatementSync } from "node:sqlite";
 import { all, one, transaction, type Db } from "../db/database.ts";
+import { candidateVariants } from "./aliases.ts";
 import type { ModelPrice, PriceTier } from "./types.ts";
 
 export const OVERRIDE_SOURCE = "override";
@@ -67,15 +68,21 @@ export class PricingStore {
 
   /**
    * Resolves a price for the first matching candidate id, trying every override before any fetched
-   * source, and fetched sources in priority order.
+   * source, and fetched sources in priority order. Only when no candidate matches exactly are other
+   * spellings tried (`claude-sonnet-5.5` -> `claude-sonnet-5-5`, `anthropic/claude-sonnet-5.5`), so an
+   * exact id in any source beats a derived one.
    */
   lookup(candidates: readonly string[]): ModelPrice | null {
-    for (const id of candidates) {
+    return this.#find(candidates) ?? this.#find(candidateVariants(candidates));
+  }
+
+  #find(ids: readonly string[]): ModelPrice | null {
+    for (const id of ids) {
       const row = one<PriceRow>(this.#getOverride, id);
       if (row) return toPrice(row);
     }
     for (const source of FETCHED_SOURCES) {
-      for (const id of candidates) {
+      for (const id of ids) {
         const row = one<PriceRow>(this.#getFetched, source, id);
         if (row) return toPrice(row);
       }

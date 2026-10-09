@@ -56,4 +56,4 @@ sequenceDiagram
 
 ## Model catalog
 
-`ModelCatalog` (`models.ts`) stores each provider's model list in `provider_models` / `provider_model_sync`: fetched on first view, on `POST …/models/refresh`, at startup and every `MODEL_SYNC_INTERVAL_HOURS`. A failed refresh keeps the previous list. OAuth providers copy the adapter's static list. Any id works as `provider/<id>` whether or not listed.
+`ModelCatalog` (`models.ts`) stores each provider's model list in `provider_models` / `provider_model_sync`: fetched on first view, on `POST …/models/refresh`, at startup and every `MODEL_SYNC_INTERVAL_HOURS`. A failed refresh keeps the previous list. OAuth providers copy the adapter's static list. Any id works as `provider/<id>` whether or not listed. Operators can switch single models off (`disabled_models`, applied by `Registry.resolve` and `ModelCatalog.all`).

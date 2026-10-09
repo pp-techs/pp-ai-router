@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { AliasesPage } from "@/pages/aliases";
+import { ModelsLayout } from "@/pages/models/models-layout";
 
 export const Route = createFileRoute("/_app/models")({
   staticData: { crumb: "Models" },
-  component: AliasesPage,
+  component: ModelsLayout,
 });

@@ -150,7 +150,9 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
       throw new HttpError(
         404,
         "model_not_found",
-        `No provider route for model "${requestedModel}".`,
+        deps.registry.isDisabled(requestedModel)
+          ? `Model "${requestedModel}" is disabled.`
+          : `No provider route for model "${requestedModel}".`,
       );
     }
 

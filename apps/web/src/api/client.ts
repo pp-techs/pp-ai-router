@@ -20,6 +20,7 @@ import type {
   Provider,
   ProviderCreate,
   ProviderPatch,
+  ProviderModelGroup,
   ProviderModels,
   ProviderQuotaReport,
   ProviderType,
@@ -36,8 +37,8 @@ interface List<T> {
 }
 
 const id = encodeURIComponent;
-// Alias names may contain "/" (the server route matches the rest of the path), so encode per segment.
-const aliasPath = (alias: string) => alias.split("/").map(id).join("/");
+// Alias names and model ids may contain "/" (the server routes match the rest of the path), so encode per segment.
+const slashPath = (path: string) => path.split("/").map(id).join("/");
 const unwrap = async <T>(list: Promise<List<T>>) => (await list).data;
 
 /** Typed client for the admin API (`/admin/*`); one function per endpoint. */
@@ -88,8 +89,17 @@ export const api = {
 
   aliases: () => unwrap(request<List<Alias>>("GET", "/admin/aliases")),
   putAlias: (alias: string, targets: AliasTarget[]) =>
-    request<{ alias: string }>("PUT", `/admin/aliases/${aliasPath(alias)}`, { body: { targets } }),
-  deleteAlias: (alias: string) => request<void>("DELETE", `/admin/aliases/${aliasPath(alias)}`),
+    request<{ alias: string }>("PUT", `/admin/aliases/${slashPath(alias)}`, { body: { targets } }),
+  deleteAlias: (alias: string) => request<void>("DELETE", `/admin/aliases/${slashPath(alias)}`),
+
+  /** Every provider's stored model list (no upstream fetches). */
+  models: () => unwrap(request<List<ProviderModelGroup>>("GET", "/admin/models")),
+  setModelEnabled: (providerId: string, model: string, enabled: boolean) =>
+    request<{ provider: string; id: string; enabled: boolean }>(
+      "PATCH",
+      `/admin/models/${id(providerId)}/${slashPath(model)}`,
+      { body: { enabled } },
+    ),
 
   keys: () => unwrap(request<List<VirtualKey>>("GET", "/admin/keys")),
   createKey: (body: KeyCreate) => request<CreatedKey>("POST", "/admin/keys", { body }),

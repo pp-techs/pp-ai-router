@@ -69,9 +69,10 @@ describe("fetching a provider's models", () => {
         id: "acme-large",
         name: "Acme Large",
         context_window: 200_000,
+        enabled: true,
         price: { input_per_1m: 2, output_per_1m: 8, source: "override" },
       },
-      { id: "acme-small", name: null, context_window: null, price: null },
+      { id: "acme-small", name: null, context_window: null, enabled: true, price: null },
     ]);
 
     await h.admin("GET", "/providers/acme/models");
@@ -240,6 +241,108 @@ describe("/v1/models", () => {
 
     await h.admin("PATCH", "/providers/acme", { enabled: false });
     expect(await ids(all.secret)).toEqual(["fx/only-one", "smart"]);
+  });
+});
+
+interface ModelFlag {
+  id: string;
+  enabled: boolean;
+}
+interface ProviderGroup {
+  provider: string;
+  type: string;
+  source: string;
+  data: unknown[];
+}
+
+describe("disabling models", () => {
+  it("hides a disabled model from /v1/models and flags it in the admin lists", async () => {
+    const up = await modelsServer(() => openAiList("alpha", "beta"));
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k"]);
+    await h.admin("POST", "/providers/acme/models/refresh");
+    await h.admin("PUT", "/aliases/smart", { targets: [{ provider: "acme", model: "alpha" }] });
+    await h.admin("PUT", "/aliases/both", {
+      targets: [
+        { provider: "acme", model: "alpha" },
+        { provider: "acme", model: "beta" },
+      ],
+    });
+    const key = await h.newKey();
+    const ids = async () =>
+      (
+        await readJson(
+          await h.services.app.request("/v1/models", {
+            headers: { authorization: `Bearer ${key.secret}` },
+          }),
+        )
+      ).data
+        .map((m: { id: string }) => m.id)
+        .sort();
+    const flags = async () =>
+      Object.fromEntries(
+        (await h.admin("GET", "/models")).json.data[0].data.map((m: ModelFlag) => [
+          m.id,
+          m.enabled,
+        ]),
+      );
+
+    expect(await h.admin("PATCH", "/models/acme/alpha", { enabled: false })).toMatchObject({
+      status: 200,
+      json: { provider: "acme", id: "alpha", enabled: false },
+    });
+    expect(await flags()).toEqual({ alpha: false, beta: true });
+    expect(
+      (await h.admin("GET", "/providers/acme/models")).json.data.map((m: ModelFlag) => m.enabled),
+    ).toEqual([false, true]);
+    // an alias disappears only when all of its targets are off
+    expect(await ids()).toEqual(["acme/beta", "both"]);
+
+    await h.admin("PATCH", "/models/acme/alpha", { enabled: true });
+    expect(await flags()).toEqual({ alpha: true, beta: true });
+    expect(await ids()).toEqual(["acme/alpha", "acme/beta", "both", "smart"]);
+  });
+
+  it("lists every provider with its stored models, without fetching", async () => {
+    const up = await modelsServer(() => openAiList("alpha"));
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k"]);
+    await h.admin("POST", "/providers", { id: "kiro", type: "kiro" });
+
+    const { data } = (await h.admin("GET", "/models")).json;
+    expect(
+      data.map((g: ProviderGroup) => [g.provider, g.type, g.source, g.data.length > 0]),
+    ).toEqual([
+      ["acme", "openai-compat", "none", false],
+      ["kiro", "kiro", "static", true],
+    ]);
+    expect(up.seen).toHaveLength(0);
+  });
+
+  it("accepts ids the provider does not list (including ones containing a slash) and bad input", async () => {
+    const up = await modelsServer(() => openAiList("alpha"));
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k"]);
+
+    expect(
+      (await h.admin("PATCH", "/models/acme/vendor/unlisted", { enabled: false })).json,
+    ).toMatchObject({ id: "vendor/unlisted", enabled: false });
+    expect(
+      all<{ model_id: string }>(h.services.db.prepare("SELECT model_id FROM disabled_models")).map(
+        (r) => r.model_id,
+      ),
+    ).toEqual(["vendor/unlisted"]);
+    expect((await h.admin("PATCH", "/models/ghost/m", { enabled: false })).status).toBe(404);
+    expect((await h.admin("PATCH", "/models/acme/alpha", { enabled: "no" })).status).toBe(400);
+  });
+
+  it("forgets a provider's disabled models with the provider", async () => {
+    const up = await modelsServer(() => openAiList("alpha"));
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k"]);
+    await h.admin("PATCH", "/models/acme/alpha", { enabled: false });
+    await h.admin("DELETE", "/providers/acme");
+    expect(all(h.services.db.prepare("SELECT 1 FROM disabled_models"))).toHaveLength(0);
   });
 });
 

@@ -284,6 +284,8 @@ export interface ProviderModel {
   id: string;
   name: string | null;
   context_window: number | null;
+  /** False when an operator switched the model off: it is not routed to and not listed in `/v1/models`. */
+  enabled: boolean;
   price: { input_per_1m: number | null; output_per_1m: number | null; source: string } | null;
 }
 
@@ -293,6 +295,13 @@ export interface ProviderModels {
   /** Error of the latest fetch; the previous list stays in `data`. */
   error: string | null;
   data: ProviderModel[];
+}
+
+/** One provider's stored model list, as returned for all providers at once by `GET /admin/models`. */
+export interface ProviderModelGroup extends ProviderModels {
+  provider: string;
+  type: string;
+  provider_enabled: boolean;
 }
 
 export interface QuotaWindow {

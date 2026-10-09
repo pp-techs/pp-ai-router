@@ -126,7 +126,9 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
       );
     // Aliases first, then every `provider/model` the providers offer (stored lists only: no upstream call here).
     const listed = new Map<string, string>();
-    for (const id of registry.aliasNames()) listed.set(id, "pp-ai-router");
+    for (const id of registry.aliasNames()) {
+      if (!registry.isDisabled(id)) listed.set(id, "pp-ai-router");
+    }
     for (const { provider, model } of models.all()) listed.set(`${provider}/${model.id}`, provider);
     const data = [...listed]
       .filter(([id]) => isModelAllowed(key, id))

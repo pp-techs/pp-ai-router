@@ -30,6 +30,7 @@ Admin (`Authorization: Bearer $ADMIN_TOKEN`):
 GET|POST   /admin/providers            PATCH|DELETE /admin/providers/:id
 GET|POST   /admin/providers/:id/credentials     PATCH|DELETE /admin/credentials/:id
 GET        /admin/providers/:id/models          POST /admin/providers/:id/models/refresh
+GET        /admin/models                        PATCH /admin/models/:provider/:model   {enabled}
 GET        /admin/providers/:id/quota[?refresh=true]    GET /admin/credentials/:id/quota[?refresh=true]
 GET        /admin/aliases              PUT|DELETE   /admin/aliases/:alias
 GET|POST   /admin/keys                 GET|PATCH|DELETE /admin/keys/:id
@@ -48,7 +49,7 @@ curl -H "$A" -H "$J" localhost:8080/admin/keys -d '{"name":"alice","limits":[{"m
 
 ## Models
 
-Each provider's model list is available from `GET /admin/providers/:id/models` (with `$/1M` prices joined in) and, for clients, as `provider/model` entries in `GET /v1/models` next to the aliases (filtered by the key's `allowed_models`).
+Each provider's model list is available from `GET /admin/providers/:id/models` (with `$/1M` prices joined in) and, for clients, as `provider/model` entries in `GET /v1/models` next to the aliases (filtered by the key's `allowed_models`). `GET /admin/models` returns every provider's stored list at once; `PATCH /admin/models/:provider/:model` with `{"enabled": false}` switches a model off: it is no longer routed to (404 `model_not_found`, skipped inside aliases) and leaves `/v1/models`. Any `provider/model` id can be switched, listed or not.
 
 - **OpenAI-compatible and Anthropic providers** are fetched from the upstream (`GET {base_url}/models`, Anthropic paginated) with one of the provider's active credentials, trying up to three. The result is stored in SQLite, so listing never waits on the network and survives restarts. It is fetched on the first view, on `POST …/models/refresh`, at startup and every `MODEL_SYNC_INTERVAL_HOURS` (default 6, `0` = on demand only). A failed refresh keeps the previous list and reports the error. The parser accepts `{data:[…]}`, `{models:[…]}`, bare arrays, string entries and `context_length`/`context_window`.
 - **OAuth providers (Kiro, Antigravity)** have a fixed built-in list (`src/providers/kiro/models.ts`, `src/providers/antigravity/models.ts`), because their backends offer no discovery we can call per account. Any other id still works as `provider/<id>`: requests are routed by name whether or not it is listed.

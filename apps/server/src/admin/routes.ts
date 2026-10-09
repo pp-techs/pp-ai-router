@@ -90,6 +90,7 @@ const aliasBody = z.strictObject({
     .min(1)
     .max(20),
 });
+const modelPatch = z.strictObject({ enabled: z.boolean() });
 
 const limitInput = z.strictObject({
   metric: z.enum(METRICS),
@@ -320,6 +321,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
         id: m.id,
         name: m.name ?? null,
         context_window: m.contextWindow ?? null,
+        enabled: !registry.isModelDisabled(providerId, m.id),
         price: price
           ? {
               input_per_1m: per1m(price.input),
@@ -343,6 +345,38 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const id = c.req.param("id");
     if (!registry.provider(id)) throw notFound("Provider");
     return c.json(modelsView(id, await models.refresh(id)));
+  });
+
+  /** Every provider's stored model list in one call (no upstream fetches), for the Models page. */
+  app.get("/models", (c) =>
+    c.json({
+      data: registry.providers().map((p) => ({
+        provider: p.id,
+        type: p.type,
+        provider_enabled: p.enabled,
+        ...modelsView(p.id, models.get(p.id)),
+      })),
+    }),
+  );
+
+  /** Switches one model on or off. Any `provider/model` id can be routed to, so it need not be in the list. */
+  app.patch("/models/:provider/:model{.+}", async (c) => {
+    const provider = c.req.param("provider");
+    const model = c.req.param("model");
+    if (!registry.provider(provider)) throw notFound("Provider");
+    const { enabled } = await parse(c, modelPatch);
+    if (enabled) {
+      db.prepare("DELETE FROM disabled_models WHERE provider_id = ? AND model_id = ?").run(
+        provider,
+        model,
+      );
+    } else {
+      db.prepare(
+        "INSERT OR IGNORE INTO disabled_models (provider_id, model_id, disabled_at) VALUES (?, ?, ?)",
+      ).run(provider, model, now());
+    }
+    registry.reload();
+    return c.json({ provider, id: model, enabled });
   });
   app.get("/providers/:id/credentials", (c) => {
     const provider = registry.provider(c.req.param("id"));
