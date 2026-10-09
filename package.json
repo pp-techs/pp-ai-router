@@ -1,6 +1,6 @@
 {
   "name": "pp-ai-router",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "private": true,
   "workspaces": [
     "packages/*",

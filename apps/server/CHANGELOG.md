@@ -1,5 +1,15 @@
 # server
 
+## 0.5.0
+
+### Minor Changes
+
+- 90360b9: Models page: `/models` now lists every model all providers offer (group by provider or one flat list, search by provider/id/name, filter enabled/disabled) with a switch to turn each model off; aliases moved to a `/models/aliases` tab. Server: new `disabled_models` table, `GET /admin/models` (all providers' stored lists) and `PATCH /admin/models/:provider/:model` `{enabled}`. A disabled model is not routed to (404 `model_not_found`, skipped inside aliases so fallbacks still work) and is hidden from `/v1/models`; an alias disappears there when all its targets are disabled. Provider model lists now carry an `enabled` flag.
+
+### Patch Changes
+
+- 90360b9: Server: price lookup now also tries other spellings of a model id when nothing matches exactly: `.` and `-` between version digits (`claude-sonnet-5.5` finds LiteLLM's `claude-sonnet-5-5`), a dropped `.0`, and the vendor prefix OpenRouter uses (`anthropic/…`, `openai/…`, `deepseek/deepseek-v3.2`). An exact id in any source still wins over a derived one, and overrides on the id as written win over both. Kiro's Claude 4.x/5.5 models and others that were billed as unpriced now get a price.
+
 ## 0.4.2
 
 ### Patch Changes

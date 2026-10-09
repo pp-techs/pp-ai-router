@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.5.0] — 2026-10-09
+
+Models page: `/models` now lists every model all providers offer (group by provider or one flat list, search by provider/id/name, filter enabled/disabled) with a switch to turn each model off; aliases moved to a `/models/aliases` tab. Server: new `disabled_models` table, `GET /admin/models` (all providers' stored lists) and `PATCH /admin/models/:provider/:model` `{enabled}`. A disabled model is not routed to (404 `model_not_found`, skipped inside aliases so fallbacks still work) and is hidden from `/v1/models`; an alias disappears there when all its targets are disabled. Provider model lists now carry an `enabled` flag.
+
+Server: price lookup now also tries other spellings of a model id when nothing matches exactly: `.` and `-` between version digits (`claude-sonnet-5.5` finds LiteLLM's `claude-sonnet-5-5`), a dropped `.0`, and the vendor prefix OpenRouter uses (`anthropic/…`, `openai/…`, `deepseek/deepseek-v3.2`). An exact id in any source still wins over a derived one, and overrides on the id as written win over both. Kiro's Claude 4.x/5.5 models and others that were billed as unpriced now get a price.
+
 ## [0.4.2] — 2026-10-08
 
 Admin UI: select options show readable labels instead of raw ids (credential strategy "Round robin", limit windows "1 day", "Total", "Custom…", modes "Fixed (UTC)" / "Rolling"), and the select trigger is back to the plain Base UI `items` pattern. Server: Kiro model list adds `claude-sonnet-5.5` and `claude-opus-5.5` (1M context) and documents which announced ids are intentionally left out.
