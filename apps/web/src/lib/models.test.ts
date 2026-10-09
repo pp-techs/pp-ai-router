@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { ProviderModel } from "../api/types.ts";
-import { filterModels, formatContextWindow } from "./models.ts";
+import type { ProviderModel, ProviderModelGroup } from "../api/types.ts";
+import { filterGroups, filterModels, flattenGroups, formatContextWindow } from "./models.ts";
 
-const model = (id: string, name: string | null = null): ProviderModel => ({
+const model = (id: string, name: string | null = null, enabled = true): ProviderModel => ({
   id,
   name,
   context_window: null,
+  enabled,
   price: null,
 });
 const LIST = [
@@ -28,6 +29,63 @@ describe("filterModels", () => {
   it("requires every term to match", () => {
     expect(filterModels(LIST, "gpt mini").map((m) => m.id)).toEqual(["gpt-4o-mini"]);
     expect(filterModels(LIST, "gpt llama")).toEqual([]);
+  });
+});
+
+const group = (provider: string, data: ProviderModel[]): ProviderModelGroup => ({
+  provider,
+  type: "openai-compat",
+  provider_enabled: true,
+  source: "fetched",
+  fetched_at: null,
+  error: null,
+  data,
+});
+const GROUPS = [
+  group("openai", [model("gpt-4o"), model("gpt-4o-mini", null, false)]),
+  group("kiro", [model("claude-sonnet-4", "Claude Sonnet 4"), model("gpt-5.6-sol", null, false)]),
+  group("empty", []),
+];
+
+describe("filterGroups", () => {
+  it("keeps every group, even an empty one, when nothing is filtered", () => {
+    expect(filterGroups(GROUPS, "  ", "all")).toBe(GROUPS);
+  });
+
+  it("matches the provider id as well as the model id and name, and drops groups left empty", () => {
+    const ids = (groups: ProviderModelGroup[]) =>
+      groups.map((g) => [g.provider, g.data.map((m) => m.id)]);
+    expect(ids(filterGroups(GROUPS, "kiro", "all"))).toEqual([
+      ["kiro", ["claude-sonnet-4", "gpt-5.6-sol"]],
+    ]);
+    expect(ids(filterGroups(GROUPS, "gpt", "all"))).toEqual([
+      ["openai", ["gpt-4o", "gpt-4o-mini"]],
+      ["kiro", ["gpt-5.6-sol"]],
+    ]);
+    expect(ids(filterGroups(GROUPS, "kiro sonnet", "all"))).toEqual([
+      ["kiro", ["claude-sonnet-4"]],
+    ]);
+  });
+
+  it("filters by enabled state, combined with the search", () => {
+    expect(flattenGroups(filterGroups(GROUPS, "", "disabled")).map((r) => r.model.id)).toEqual([
+      "gpt-4o-mini",
+      "gpt-5.6-sol",
+    ]);
+    expect(flattenGroups(filterGroups(GROUPS, "gpt", "enabled")).map((r) => r.model.id)).toEqual([
+      "gpt-4o",
+    ]);
+  });
+});
+
+describe("flattenGroups", () => {
+  it("lists every model with its provider, in group order", () => {
+    expect(flattenGroups(GROUPS).map((r) => `${r.provider}/${r.model.id}`)).toEqual([
+      "openai/gpt-4o",
+      "openai/gpt-4o-mini",
+      "kiro/claude-sonnet-4",
+      "kiro/gpt-5.6-sol",
+    ]);
   });
 });
 

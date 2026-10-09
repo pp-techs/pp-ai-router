@@ -24,7 +24,7 @@ flowchart TD
 1. **Auth**: `Authorization: Bearer sk-pp-…` or `x-api-key`; unknown/disabled/expired -> 401 `invalid_api_key`.
 2. **Model allow-list**: 403 `model_not_allowed`.
 3. **Limits**: first exceeded limit -> 429 `limit_exceeded` with `resets_at`/`retry_after`.
-4. **Route**: aliases expand to ordered targets (later = fallback); `provider/model` addresses one provider; none -> 404 `model_not_found`.
+4. **Route**: aliases expand to ordered targets (later = fallback); `provider/model` addresses one provider; targets whose model is disabled (`disabled_models`) are skipped, so an alias falls back past them; nothing left -> 404 `model_not_found` ("is disabled" when the model exists but is switched off).
 5. **Per target**: price lookup (`UNPRICED_MODELS=reject` skips unpriced targets), then up to `max_key_attempts` credentials chosen by the pool, excluding ones already tried. Sticky key = `x-session-id`, `prompt_cache_key` or `user`.
 6. **Upstream call** with `UPSTREAM_TIMEOUT_MS` (time to headers) combined with the client abort signal. Streaming adds `stream_options.include_usage`.
 7. **Classification** (`classify`): 429 rate-limited, 5xx server error, 403 forbidden, 401 auth; others (400/404/422) are the caller's fault and are returned without retry.

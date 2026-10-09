@@ -14,9 +14,11 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppKeysRouteImport } from './routes/_app/keys'
-import { Route as AppModelsRouteImport } from './routes/_app/models'
+import { Route as AppModelsRouteRouteImport } from './routes/_app/models/route'
 import { Route as AppProvidersRouteRouteImport } from './routes/_app/providers/route'
 import { Route as AppUsageRouteImport } from './routes/_app/usage'
+import { Route as AppModelsIndexRouteImport } from './routes/_app/models/index'
+import { Route as AppModelsAliasesRouteImport } from './routes/_app/models/aliases'
 import { Route as AppProvidersIndexRouteImport } from './routes/_app/providers/index'
 import { Route as AppProvidersIdRouteImport } from './routes/_app/providers/$id'
 
@@ -44,7 +46,7 @@ const AppKeysRoute = AppKeysRouteImport.update({
   path: '/keys',
   getParentRoute: () => AppRoute,
 } as any)
-const AppModelsRoute = AppModelsRouteImport.update({
+const AppModelsRouteRoute = AppModelsRouteRouteImport.update({
   id: '/models',
   path: '/models',
   getParentRoute: () => AppRoute,
@@ -58,6 +60,16 @@ const AppUsageRoute = AppUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
   getParentRoute: () => AppRoute,
+} as any)
+const AppModelsIndexRoute = AppModelsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppModelsRouteRoute,
+} as any)
+const AppModelsAliasesRoute = AppModelsAliasesRouteImport.update({
+  id: '/aliases',
+  path: '/aliases',
+  getParentRoute: () => AppModelsRouteRoute,
 } as any)
 const AppProvidersIndexRoute = AppProvidersIndexRouteImport.update({
   id: '/',
@@ -73,35 +85,40 @@ const AppProvidersIdRoute = AppProvidersIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/models': typeof AppModelsRouteRouteWithChildren
   '/providers': typeof AppProvidersRouteRouteWithChildren
   '/$': typeof AppSplatRoute
   '/keys': typeof AppKeysRoute
-  '/models': typeof AppModelsRoute
   '/usage': typeof AppUsageRoute
+  '/models/aliases': typeof AppModelsAliasesRoute
   '/providers/$id': typeof AppProvidersIdRoute
+  '/models/': typeof AppModelsIndexRoute
   '/providers/': typeof AppProvidersIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/$': typeof AppSplatRoute
   '/keys': typeof AppKeysRoute
-  '/models': typeof AppModelsRoute
   '/usage': typeof AppUsageRoute
   '/': typeof AppIndexRoute
+  '/models/aliases': typeof AppModelsAliasesRoute
   '/providers/$id': typeof AppProvidersIdRoute
+  '/models': typeof AppModelsIndexRoute
   '/providers': typeof AppProvidersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/models': typeof AppModelsRouteRouteWithChildren
   '/_app/providers': typeof AppProvidersRouteRouteWithChildren
   '/_app/$': typeof AppSplatRoute
   '/_app/keys': typeof AppKeysRoute
-  '/_app/models': typeof AppModelsRoute
   '/_app/usage': typeof AppUsageRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/models/aliases': typeof AppModelsAliasesRoute
   '/_app/providers/$id': typeof AppProvidersIdRoute
+  '/_app/models/': typeof AppModelsIndexRoute
   '/_app/providers/': typeof AppProvidersIndexRoute
 }
 export interface FileRouteTypes {
@@ -109,34 +126,39 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/models'
     | '/providers'
     | '/$'
     | '/keys'
-    | '/models'
     | '/usage'
+    | '/models/aliases'
     | '/providers/$id'
+    | '/models/'
     | '/providers/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/$'
     | '/keys'
-    | '/models'
     | '/usage'
     | '/'
+    | '/models/aliases'
     | '/providers/$id'
+    | '/models'
     | '/providers'
   id:
     | '__root__'
     | '/_app'
     | '/login'
+    | '/_app/models'
     | '/_app/providers'
     | '/_app/$'
     | '/_app/keys'
-    | '/_app/models'
     | '/_app/usage'
     | '/_app/'
+    | '/_app/models/aliases'
     | '/_app/providers/$id'
+    | '/_app/models/'
     | '/_app/providers/'
   fileRoutesById: FileRoutesById
 }
@@ -186,7 +208,7 @@ declare module '@tanstack/react-router' {
       id: '/_app/models'
       path: '/models'
       fullPath: '/models'
-      preLoaderRoute: typeof AppModelsRouteImport
+      preLoaderRoute: typeof AppModelsRouteRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/providers': {
@@ -202,6 +224,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/usage'
       preLoaderRoute: typeof AppUsageRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/_app/models/': {
+      id: '/_app/models/'
+      path: '/'
+      fullPath: '/models/'
+      preLoaderRoute: typeof AppModelsIndexRouteImport
+      parentRoute: typeof AppModelsRouteRoute
+    }
+    '/_app/models/aliases': {
+      id: '/_app/models/aliases'
+      path: '/aliases'
+      fullPath: '/models/aliases'
+      preLoaderRoute: typeof AppModelsAliasesRouteImport
+      parentRoute: typeof AppModelsRouteRoute
     }
     '/_app/providers/': {
       id: '/_app/providers/'
@@ -220,6 +256,20 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppModelsRouteRouteChildren {
+  AppModelsAliasesRoute: typeof AppModelsAliasesRoute
+  AppModelsIndexRoute: typeof AppModelsIndexRoute
+}
+
+const AppModelsRouteRouteChildren: AppModelsRouteRouteChildren = {
+  AppModelsAliasesRoute: AppModelsAliasesRoute,
+  AppModelsIndexRoute: AppModelsIndexRoute,
+}
+
+const AppModelsRouteRouteWithChildren = AppModelsRouteRoute._addFileChildren(
+  AppModelsRouteRouteChildren,
+)
+
 interface AppProvidersRouteRouteChildren {
   AppProvidersIdRoute: typeof AppProvidersIdRoute
   AppProvidersIndexRoute: typeof AppProvidersIndexRoute
@@ -234,19 +284,19 @@ const AppProvidersRouteRouteWithChildren =
   AppProvidersRouteRoute._addFileChildren(AppProvidersRouteRouteChildren)
 
 interface AppRouteChildren {
+  AppModelsRouteRoute: typeof AppModelsRouteRouteWithChildren
   AppProvidersRouteRoute: typeof AppProvidersRouteRouteWithChildren
   AppSplatRoute: typeof AppSplatRoute
   AppKeysRoute: typeof AppKeysRoute
-  AppModelsRoute: typeof AppModelsRoute
   AppUsageRoute: typeof AppUsageRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppModelsRouteRoute: AppModelsRouteRouteWithChildren,
   AppProvidersRouteRoute: AppProvidersRouteRouteWithChildren,
   AppSplatRoute: AppSplatRoute,
   AppKeysRoute: AppKeysRoute,
-  AppModelsRoute: AppModelsRoute,
   AppUsageRoute: AppUsageRoute,
   AppIndexRoute: AppIndexRoute,
 }

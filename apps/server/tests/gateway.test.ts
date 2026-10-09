@@ -108,6 +108,39 @@ describe("request lifecycle", () => {
     expect(up.calls).toHaveLength(0);
   });
 
+  it("refuses a disabled model, falls back past it inside an alias, and routes to it again once enabled", async () => {
+    const up = await upstream(() => completion());
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k1"]);
+    await h.admin("PUT", "/aliases/smart", {
+      targets: [
+        { provider: "acme", model: "primary" },
+        { provider: "acme", model: "fallback" },
+      ],
+    });
+    await h.admin("PUT", "/aliases/only-primary", {
+      targets: [{ provider: "acme", model: "primary" }],
+    });
+    const key = await h.newKey();
+    await h.admin("PATCH", "/models/acme/primary", { enabled: false });
+
+    const direct = await h.chat(key.secret, { model: "acme/primary" });
+    expect(direct.status).toBe(404);
+    expect((await readJson(direct)).error).toMatchObject({
+      code: "model_not_found",
+      message: 'Model "acme/primary" is disabled.',
+    });
+    expect((await h.chat(key.secret, { model: "only-primary" })).status).toBe(404);
+    expect(up.calls).toHaveLength(0);
+
+    expect((await h.chat(key.secret, { model: "smart" })).status).toBe(200);
+    expect(up.calls.map((c) => c.body.model)).toEqual(["fallback"]);
+
+    await h.admin("PATCH", "/models/acme/primary", { enabled: true });
+    expect((await h.chat(key.secret, { model: "acme/primary" })).status).toBe(200);
+    expect(up.calls.map((c) => c.body.model)).toEqual(["fallback", "primary"]);
+  });
+
   it("does not accept a disabled or expired key", async () => {
     const up = await upstream(() => completion());
     const h = createHarness();

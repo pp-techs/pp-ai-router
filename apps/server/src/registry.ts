@@ -62,7 +62,7 @@ interface CredentialRow {
 }
 
 /**
- * In-memory snapshot of providers, credentials (secrets decrypted) and aliases. Admin writes call
+ * In-memory snapshot of providers, credentials (secrets decrypted), aliases and switched-off models. Admin writes call
  * `reload()`; selector instances survive a reload while their strategy is unchanged so round-robin
  * position and weights are not reset.
  */
@@ -71,6 +71,8 @@ export class Registry {
   readonly #box: SecretBox;
   #providers = new Map<string, ProviderRuntime>();
   #aliases = new Map<string, Target[]>();
+  /** `provider/model` of every disabled model (provider ids never contain `/`, so the key is unambiguous). */
+  #disabled = new Set<string>();
   readonly #selectors = new Map<string, { strategy: Strategy; selector: KeySelector }>();
 
   constructor(db: Db, box: SecretBox) {
@@ -129,8 +131,15 @@ export class Registry {
     )) {
       aliases.set(r.alias, JSON.parse(r.targets) as Target[]);
     }
+    const disabled = new Set<string>();
+    for (const r of all<{ provider_id: string; model_id: string }>(
+      this.#db.prepare("SELECT provider_id, model_id FROM disabled_models"),
+    )) {
+      disabled.add(`${r.provider_id}/${r.model_id}`);
+    }
     this.#providers = providers;
     this.#aliases = aliases;
+    this.#disabled = disabled;
   }
 
   provider(id: string): ProviderRuntime | undefined {
@@ -147,9 +156,24 @@ export class Registry {
 
   /**
    * Ordered upstream targets for a client-facing model name: an alias expands to its target list;
-   * `provider/model` addresses one provider directly. Empty when nothing matches.
+   * `provider/model` addresses one provider directly. Targets whose model is switched off are left
+   * out. Empty when nothing matches.
    */
   resolve(model: string): Target[] {
+    return this.#route(model).filter((t) => !this.isModelDisabled(t.provider, t.model));
+  }
+
+  /** True when `model` routes somewhere but every target of it is switched off. */
+  isDisabled(model: string): boolean {
+    const routes = this.#route(model);
+    return routes.length > 0 && routes.every((t) => this.isModelDisabled(t.provider, t.model));
+  }
+
+  isModelDisabled(provider: string, model: string): boolean {
+    return this.#disabled.has(`${provider}/${model}`);
+  }
+
+  #route(model: string): Target[] {
     const alias = this.#aliases.get(model);
     if (alias) return alias.filter((t) => this.#providers.has(t.provider));
     const slash = model.indexOf("/");

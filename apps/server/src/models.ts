@@ -100,12 +100,14 @@ export class ModelCatalog {
     return attempted ? this.get(providerId) : this.refresh(providerId);
   }
 
-  /** Every `provider/model` pair across enabled providers, from stored data only. */
+  /** Every enabled `provider/model` pair across enabled providers, from stored data only. */
   all(): { provider: string; model: ModelInfo }[] {
     const out: { provider: string; model: ModelInfo }[] = [];
     for (const p of this.#registry.providers()) {
       if (!p.enabled) continue;
-      for (const model of this.get(p.id).models) out.push({ provider: p.id, model });
+      for (const model of this.get(p.id).models) {
+        if (!this.#registry.isModelDisabled(p.id, model.id)) out.push({ provider: p.id, model });
+      }
     }
     return out;
   }

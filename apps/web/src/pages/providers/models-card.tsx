@@ -155,7 +155,7 @@ export function ModelsCard({
                   {matches.slice(0, shown).map((m) => (
                     <TableRow key={m.id}>
                       <TableCell className="font-mono text-xs break-all whitespace-normal">
-                        {m.id}
+                        {m.id} {!m.enabled && <StatusBadge tone="warn">disabled</StatusBadge>}
                         {m.name && <p className="font-sans text-muted-foreground">{m.name}</p>}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">

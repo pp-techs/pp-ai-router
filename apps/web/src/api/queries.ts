@@ -12,6 +12,8 @@ export const qk = {
   providerTypes: ["provider-types"] as const,
   providers: ["providers"] as const,
   providerModels: (providerId: string) => ["providers", providerId, "models"] as const,
+  /** Every provider's model list at once (the Models page). */
+  models: ["models"] as const,
   providerQuota: (providerId: string) => ["providers", providerId, "quota"] as const,
   credentials: (providerId: string) => ["providers", providerId, "credentials"] as const,
   oauthSession: (sessionId: string) => ["oauth-session", sessionId] as const,

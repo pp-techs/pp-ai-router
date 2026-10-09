@@ -172,6 +172,56 @@ describe("PricingStore + sync", () => {
     expect(store.syncState("litellm")?.last_error).toContain("500");
   });
 
+  it("finds a price under another spelling of the model id, and prefers an exact id over a derived one", () => {
+    const store = new PricingStore(openDatabase(":memory:"));
+    const price = (source: string, model: string, input: number): ModelPrice => ({
+      model,
+      source,
+      input,
+      output: input * 5,
+      tiers: [],
+    });
+    store.replaceSource(
+      "litellm",
+      [
+        price("litellm", "claude-sonnet-5-5", 2e-6),
+        price("litellm", "claude-opus-4-8", 5e-6),
+        price("litellm", "claude-haiku-5-5", 1e-6),
+        price("litellm", "eu.anthropic.claude-opus-5-5", 9e-6),
+      ],
+      1,
+    );
+    store.replaceSource(
+      "openrouter",
+      [
+        price("openrouter", "anthropic/claude-sonnet-4", 3e-6),
+        price("openrouter", "anthropic/claude-haiku-5.5", 7e-6),
+        price("openrouter", "anthropic/claude-sonnet-5.5:batch", 1e-6),
+      ],
+      1,
+    );
+
+    // dot -> dash (LiteLLM spelling)
+    expect(store.lookup(["kiro/claude-sonnet-5.5", "claude-sonnet-5.5"])).toMatchObject({
+      model: "claude-sonnet-5-5",
+      input: 2e-6,
+    });
+    expect(store.lookup(["claude-opus-4.8"])?.model).toBe("claude-opus-4-8");
+    // vendor prefix and a dropped `.0` (OpenRouter spelling)
+    expect(store.lookup(["claude-sonnet-4.0"])?.model).toBe("anthropic/claude-sonnet-4");
+    // an exact id in a lower-priority source beats a derived id in a higher-priority one
+    expect(store.lookup(["anthropic/claude-haiku-5.5"])).toMatchObject({
+      source: "openrouter",
+      model: "anthropic/claude-haiku-5.5",
+    });
+    // a user override on the id as written wins over any derived price
+    store.setOverride({ model: "claude-opus-4.8", input: 1e-6, output: 2e-6 }, 1);
+    expect(store.lookup(["claude-opus-4.8"])).toMatchObject({ source: "override", input: 1e-6 });
+    // never a regional/batch variant, and nothing for a model that is simply unknown
+    expect(store.lookup(["claude-opus-5.5"])).toBeNull();
+    expect(store.lookup(["kiro-auto"])).toBeNull();
+  });
+
   it("sends the stored ETag and treats 304 as success", async () => {
     const store = new PricingStore(openDatabase(":memory:"));
     const src = source("litellm", { models: ["a", "b"] });

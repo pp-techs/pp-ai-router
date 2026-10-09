@@ -5,7 +5,7 @@ import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Alias, Provider } from "@/api/types";
 import { ConfirmModal } from "@/components/confirm-modal";
-import { PageHeader, Panel } from "@/components/page";
+import { Panel } from "@/components/page";
 import { RowActions } from "@/components/row-actions";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
 import { StatusBadge } from "@/components/status-badge";
@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AliasModal } from "./alias-dialog";
+import { AliasModal } from "../alias-dialog";
 
 const matches = (alias: Alias, needle: string) =>
   alias.alias.toLowerCase().includes(needle) ||
@@ -133,7 +133,7 @@ function AliasTable({
   );
 }
 
-export function AliasesPage() {
+export function AliasesTab() {
   const aliases = useQuery({ queryKey: qk.aliases, queryFn: api.aliases });
   const providers = useQuery({ queryKey: qk.providers, queryFn: api.providers });
 
@@ -156,50 +156,48 @@ export function AliasesPage() {
   );
 
   return (
-    <>
-      <PageHeader
-        title="Models"
-        description={
-          <>
-            An alias is a public model name that maps to an ordered list of upstream targets. The
-            router tries them top to bottom, so later targets are fallbacks. Without an alias,{" "}
-            <code className="font-mono text-xs">provider/model</code> also works.
-          </>
+    <Panel
+      flush
+      title="Aliases"
+      description={
+        <>
+          An alias is a public model name that maps to an ordered list of upstream targets. The
+          router tries them top to bottom, so later targets are fallbacks. Without an alias,{" "}
+          <code className="font-mono text-xs">provider/model</code> also works.
+        </>
+      }
+      actions={newButton}
+    >
+      <QueryBoundary
+        query={aliases}
+        isEmpty={(list) => list.length === 0}
+        empty={
+          <EmptyState
+            icon={NetworkIcon}
+            title="No aliases yet"
+            action={providers.data?.length ? newButton : undefined}
+          >
+            {providers.data?.length === 0
+              ? "Add a provider first."
+              : "Create one to give clients a stable model name."}
+          </EmptyState>
         }
-        actions={newButton}
-      />
-      <Panel flush>
-        <QueryBoundary
-          query={aliases}
-          isEmpty={(list) => list.length === 0}
-          empty={
-            <EmptyState
-              icon={NetworkIcon}
-              title="No aliases yet"
-              action={providers.data?.length ? newButton : undefined}
-            >
-              {providers.data?.length === 0
-                ? "Add a provider first."
-                : "Create one to give clients a stable model name."}
-            </EmptyState>
-          }
-        >
-          {(list) => (
-            <AliasTable
-              aliases={list}
-              providers={providers.data}
-              onDelete={(a) =>
-                void ConfirmModal.show({
-                  title: `Delete alias ${a.alias}?`,
-                  message: "Clients using this model name will get an error until it is recreated.",
-                  confirmLabel: "Delete alias",
-                  action: () => remove.mutateAsync(a.alias),
-                })
-              }
-            />
-          )}
-        </QueryBoundary>
-      </Panel>
-    </>
+      >
+        {(list) => (
+          <AliasTable
+            aliases={list}
+            providers={providers.data}
+            onDelete={(a) =>
+              void ConfirmModal.show({
+                title: `Delete alias ${a.alias}?`,
+                message: "Clients using this model name will get an error until it is recreated.",
+                confirmLabel: "Delete alias",
+                action: () => remove.mutateAsync(a.alias),
+              })
+            }
+          />
+        )}
+      </QueryBoundary>
+    </Panel>
   );
 }
