@@ -19,6 +19,8 @@ import { QuotaService } from "./quota/service.ts";
 import { RecentUsage } from "./pool/recent-usage.ts";
 import { PricingStore } from "./pricing/store.ts";
 import { ADAPTERS, type ProviderAdapter } from "./providers/adapter.ts";
+import { listClientModels } from "./client-models.ts";
+import { ModelMetadataStore } from "./model-metadata.ts";
 import { ModelCatalog } from "./models.ts";
 import { Registry } from "./registry.ts";
 import { AuditLogStore } from "./audit/store.ts";
@@ -27,6 +29,7 @@ export interface Services {
   app: Hono;
   db: Db;
   pricing: PricingStore;
+  metadata: ModelMetadataStore;
   registry: Registry;
   pool: CredentialPool;
   keys: VirtualKeyStore;
@@ -65,6 +68,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
   const box = new SecretBox(Buffer.from(config.MASTER_KEY, "base64"));
 
   const pricing = new PricingStore(db);
+  const metadata = new ModelMetadataStore(db);
   const registry = new Registry(db, box);
   const recent = new RecentUsage();
   recent.load(db, now());
@@ -75,7 +79,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
   const accounting = new Accounting(db, meter, pool, now, audit);
   const tokens = new TokenManager(registry, adapters, log, now);
   const logins = new LoginSessions(db, box, registry, adapters, now);
-  const models = new ModelCatalog(db, registry, tokens, adapters, log, now);
+  const models = new ModelCatalog(db, registry, tokens, adapters, log, metadata, now);
   const quota = new QuotaService(registry, pool, tokens, adapters, log, now);
 
   const app = new Hono();
@@ -127,15 +131,12 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
         },
         401,
       );
-    // Aliases first, then every `provider/model` the providers offer (stored lists only: no upstream call here).
-    const listed = new Map<string, string>();
-    for (const id of registry.aliasNames()) {
-      if (!registry.isDisabled(id)) listed.set(id, "pp-ai-router");
-    }
-    for (const { provider, model } of models.all()) listed.set(`${provider}/${model.id}`, provider);
-    const data = [...listed]
-      .filter(([id]) => isModelAllowed(key, id))
-      .map(([id, owner]) => ({ id, object: "model", created: 0, owned_by: owner }));
+    const verbose = ["1", "true"].includes(c.req.query("verbose") ?? "");
+    const data = listClientModels(
+      { registry, models, pricing },
+      (id) => isModelAllowed(key, id),
+      verbose,
+    );
     return c.json({ object: "list", data });
   });
 
@@ -150,6 +151,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
       keys,
       meter,
       pricing,
+      metadata,
       adapters,
       logins,
       models,
@@ -162,7 +164,21 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
 
   if (config.WEB_DIST) mountWeb(app, resolve(config.WEB_DIST), log);
 
-  return { app, db, pricing, registry, pool, keys, meter, tokens, logins, models, quota, audit };
+  return {
+    app,
+    db,
+    pricing,
+    metadata,
+    registry,
+    pool,
+    keys,
+    meter,
+    tokens,
+    logins,
+    models,
+    quota,
+    audit,
+  };
 }
 
 /**

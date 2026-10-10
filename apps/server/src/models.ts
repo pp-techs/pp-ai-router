@@ -1,7 +1,8 @@
 import { all, one, transaction, type Db } from "./db/database.ts";
 import type { Logger } from "./logger.ts";
+import type { ModelMetadataStore } from "./model-metadata.ts";
 import type { TokenManager } from "./oauth/token-manager.ts";
-import type { ModelInfo, ProviderAdapter } from "./providers/adapter.ts";
+import type { ModelDetails, ModelInfo, ProviderAdapter } from "./providers/adapter.ts";
 import type { Registry } from "./registry.ts";
 
 export interface ModelList {
@@ -18,6 +19,7 @@ interface ModelRow {
   model_id: string;
   name: string | null;
   context_window: number | null;
+  details: string | null;
 }
 
 interface SyncRow {
@@ -30,11 +32,25 @@ const FETCH_TIMEOUT_MS = 15_000;
 /** Credentials tried per refresh before giving up (a dead or rate-limited key should not block discovery). */
 const MAX_CREDENTIAL_TRIES = 3;
 
-const toInfo = (r: ModelRow): ModelInfo => ({
-  id: r.model_id,
-  ...(r.name !== null && { name: r.name }),
-  ...(r.context_window !== null && { contextWindow: r.context_window }),
-});
+/** Facts kept in `provider_models.details`; the name and context window have columns of their own. */
+type StoredDetails = Omit<ModelDetails, "name" | "contextWindow">;
+
+function toInfo(r: ModelRow): ModelInfo {
+  let details: StoredDetails = {};
+  if (r.details !== null) {
+    try {
+      details = JSON.parse(r.details) as StoredDetails;
+    } catch {
+      // unreadable details are dropped; the next refresh rewrites them
+    }
+  }
+  return {
+    id: r.model_id,
+    ...details,
+    ...(r.name !== null && { name: r.name }),
+    ...(r.context_window !== null && { contextWindow: r.context_window }),
+  };
+}
 
 /**
  * What each provider offers. OAuth/subscription adapters ship a fixed list. For the rest the list is
@@ -47,6 +63,7 @@ export class ModelCatalog {
   readonly #tokens: TokenManager;
   readonly #adapters: Readonly<Record<string, ProviderAdapter>>;
   readonly #log: Logger;
+  readonly #metadata: ModelMetadataStore;
   readonly #now: () => number;
   readonly #inflight = new Map<string, Promise<ModelList>>();
 
@@ -56,6 +73,7 @@ export class ModelCatalog {
     tokens: TokenManager,
     adapters: Readonly<Record<string, ProviderAdapter>>,
     log: Logger,
+    metadata: ModelMetadataStore,
     now: () => number = Date.now,
   ) {
     this.#db = db;
@@ -63,6 +81,7 @@ export class ModelCatalog {
     this.#tokens = tokens;
     this.#adapters = adapters;
     this.#log = log;
+    this.#metadata = metadata;
     this.#now = now;
   }
 
@@ -71,7 +90,12 @@ export class ModelCatalog {
     const provider = this.#registry.provider(providerId);
     const adapter = provider && this.#adapters[provider.type];
     if (adapter?.staticModels) {
-      return { source: "static", models: [...adapter.staticModels], fetchedAt: null, error: null };
+      return {
+        source: "static",
+        models: adapter.staticModels.map((m) => this.#metadata.enrich(providerId, m)),
+        fetchedAt: null,
+        error: null,
+      };
     }
     const sync = one<SyncRow>(
       this.#db.prepare("SELECT * FROM provider_model_sync WHERE provider_id = ?"),
@@ -79,10 +103,10 @@ export class ModelCatalog {
     );
     const models = all<ModelRow>(
       this.#db.prepare(
-        "SELECT model_id, name, context_window FROM provider_models WHERE provider_id = ? ORDER BY model_id",
+        "SELECT model_id, name, context_window, details FROM provider_models WHERE provider_id = ? ORDER BY model_id",
       ),
       providerId,
-    ).map(toInfo);
+    ).map((row) => this.#metadata.enrich(providerId, toInfo(row)));
     return {
       source: models.length > 0 ? "fetched" : "none",
       models,
@@ -130,6 +154,14 @@ export class ModelCatalog {
     }
   }
 
+  /** Facts for one model of `providerId`, stored or (for a model the provider never listed) from the catalog alone. */
+  describe(providerId: string, modelId: string): ModelInfo {
+    return (
+      this.get(providerId).models.find((m) => m.id === modelId) ??
+      this.#metadata.enrich(providerId, { id: modelId })
+    );
+  }
+
   async #fetch(providerId: string): Promise<ModelList> {
     const provider = this.#registry.provider(providerId);
     const adapter = provider && this.#adapters[provider.type];
@@ -167,9 +199,14 @@ export class ModelCatalog {
     transaction(this.#db, () => {
       this.#db.prepare("DELETE FROM provider_models WHERE provider_id = ?").run(providerId);
       const insert = this.#db.prepare(
-        "INSERT OR REPLACE INTO provider_models (provider_id, model_id, name, context_window) VALUES (?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO provider_models (provider_id, model_id, name, context_window, details) VALUES (?, ?, ?, ?, ?)",
       );
-      for (const m of models) insert.run(providerId, m.id, m.name ?? null, m.contextWindow ?? null);
+      for (const m of models) {
+        // `name` and the context window have their own columns; `sources` is derived at read time.
+        const { id, name, contextWindow, sources: _sources, ...rest } = m;
+        const details = Object.keys(rest).length > 0 ? JSON.stringify(rest) : null;
+        insert.run(providerId, id, name ?? null, contextWindow ?? null, details);
+      }
       this.#db
         .prepare(
           `INSERT INTO provider_model_sync (provider_id, synced_at, last_attempt_at, last_error) VALUES (?, ?, ?, NULL)

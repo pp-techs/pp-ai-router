@@ -21,6 +21,7 @@ import type { ModelPrice } from "../pricing/types.ts";
 import { syncPricing } from "../pricing/sync.ts";
 import type { ProviderAdapter } from "../providers/adapter.ts";
 import type { ModelCatalog, ModelList } from "../models.ts";
+import type { ModelMetadataStore } from "../model-metadata.ts";
 import { LoginError, type LoginSessions, type SessionStatus } from "../oauth/login-sessions.ts";
 import type { LoginStartInfo } from "../oauth/types.ts";
 import type { QuotaService, QuotaStatus } from "../quota/service.ts";
@@ -37,6 +38,7 @@ export interface AdminDeps {
   keys: VirtualKeyStore;
   meter: UsageMeter;
   pricing: PricingStore;
+  metadata: ModelMetadataStore;
   adapters: Readonly<Record<string, ProviderAdapter>>;
   logins: LoginSessions;
   models: ModelCatalog;
@@ -162,8 +164,21 @@ function parseLimit(input: z.infer<typeof limitInput>) {
 }
 
 export function createAdminApp(deps: AdminDeps): Hono {
-  const { db, box, registry, pool, keys, meter, pricing, adapters, logins, models, quota, audit } =
-    deps;
+  const {
+    db,
+    box,
+    registry,
+    pool,
+    keys,
+    meter,
+    pricing,
+    metadata,
+    adapters,
+    logins,
+    models,
+    quota,
+    audit,
+  } = deps;
   const now = deps.now ?? Date.now;
   const app = new Hono();
   const expected = sha(deps.adminToken);
@@ -381,6 +396,21 @@ export function createAdminApp(deps: AdminDeps): Hono {
         id: m.id,
         name: m.name ?? null,
         context_window: m.contextWindow ?? null,
+        description: m.description ?? null,
+        created: m.created ?? null,
+        max_output_tokens: m.maxOutputTokens ?? null,
+        input_modalities: m.inputModalities ?? null,
+        output_modalities: m.outputModalities ?? null,
+        supported_parameters: m.supportedParameters ?? null,
+        // Which facts did not come from the provider itself, e.g. `{ context_window: "openrouter" }`.
+        sources: m.sources
+          ? Object.fromEntries(
+              Object.entries(m.sources).map(([k, v]) => [
+                k.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`),
+                v,
+              ]),
+            )
+          : null,
         enabled: !registry.isModelDisabled(providerId, m.id),
         price: price
           ? {
@@ -923,7 +953,9 @@ export function createAdminApp(deps: AdminDeps): Hono {
   });
   app.get("/pricing/sync", (c) => c.json({ data: pricing.syncStates() }));
   app.post("/pricing/sync", async (c) =>
-    c.json({ data: await syncPricing({ store: pricing, log: (m) => deps.log.info(m) }) }),
+    c.json({
+      data: await syncPricing({ store: pricing, metadata, log: (m) => deps.log.info(m) }),
+    }),
   );
   app.get("/pricing/overrides", (c) => c.json({ data: pricing.listOverrides().map(priceView) }));
   app.put("/pricing/overrides", async (c) => {

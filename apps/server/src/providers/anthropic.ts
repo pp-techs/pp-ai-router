@@ -1,6 +1,6 @@
 // Adapted from lidge-jun/opencodex (MIT)
 import type { ModelInfo, ProviderAdapter } from "./adapter.ts";
-import { httpError, MAX_MODELS } from "./model-list.ts";
+import { httpError, MAX_MODELS, readModelDetails } from "./model-list.ts";
 import { aggregateChunks, respond, type OpenAIChunk } from "./chunks.ts";
 import { isRecord } from "./anthropic/json.ts";
 import { InvalidRequestError, toAnthropicRequest } from "./anthropic/request.ts";
@@ -100,13 +100,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
           throw new Error("unexpected /models response");
         for (const item of json.data) {
           if (!isRecord(item) || typeof item.id !== "string") continue;
-          const info: ModelInfo = { id: item.id };
-          if (typeof item.display_name === "string" && item.display_name !== item.id)
-            info.name = item.display_name;
-          if (typeof item.max_input_tokens === "number" && item.max_input_tokens > 0) {
-            info.contextWindow = item.max_input_tokens;
-          }
-          models.push(info);
+          models.push({ id: item.id, ...readModelDetails(item) });
         }
         afterId = typeof json.last_id === "string" ? json.last_id : null;
         if (json.has_more !== true || !afterId) break;

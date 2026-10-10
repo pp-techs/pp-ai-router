@@ -6,6 +6,13 @@ const model = (id: string, name: string | null = null, enabled = true): Provider
   id,
   name,
   context_window: null,
+  description: null,
+  created: null,
+  max_output_tokens: null,
+  input_modalities: null,
+  output_modalities: null,
+  supported_parameters: null,
+  sources: null,
   enabled,
   price: null,
 });

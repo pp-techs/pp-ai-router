@@ -8,6 +8,7 @@ One SQLite file (`node:sqlite`, WAL, `foreign_keys=ON`, `STRICT` tables). `db/mi
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `providers`, `credentials`, `model_aliases`               | Routing config; secrets in `credentials.secret_enc` (AES-256-GCM)                                  |
 | `provider_models`, `provider_model_sync`                  | Stored model lists and last sync outcome per provider                                              |
+| `model_metadata`                                          | Model facts from external catalogs (OpenRouter), merged into model lists at read time              |
 | `disabled_models`                                         | `provider/model` pairs an operator switched off (kept apart: model lists are rewritten on refresh) |
 | `virtual_keys`, `limits`                                  | Client keys (SHA-256 only) and their limits                                                        |
 | `usage_buckets`                                           | Pre-aggregated per-key usage: minute buckets (windows <= 1 day), hour buckets (longer)             |

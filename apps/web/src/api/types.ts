@@ -284,6 +284,15 @@ export interface ProviderModel {
   id: string;
   name: string | null;
   context_window: number | null;
+  description: string | null;
+  /** Unix seconds. */
+  created: number | null;
+  max_output_tokens: number | null;
+  input_modalities: string[] | null;
+  output_modalities: string[] | null;
+  supported_parameters: string[] | null;
+  /** Fields the provider did not report, and the catalog that filled them (`{ context_window: "openrouter" }`). */
+  sources: Record<string, string> | null;
   /** False when an operator switched the model off: it is not routed to and not listed in `/v1/models`. */
   enabled: boolean;
   price: { input_per_1m: number | null; output_per_1m: number | null; source: string } | null;

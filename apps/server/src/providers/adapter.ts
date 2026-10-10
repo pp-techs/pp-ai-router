@@ -20,11 +20,25 @@ export interface UpstreamCall {
   signal: AbortSignal;
 }
 
-/** A model an upstream offers. `id` is the upstream name, i.e. what follows `provider/` in requests. */
-export interface ModelInfo {
-  id: string;
+/** Fields a model description can carry besides its id; also what enrichment can fill in. */
+export interface ModelDetails {
   name?: string;
+  description?: string;
+  /** Unix seconds. */
+  created?: number;
   contextWindow?: number;
+  maxOutputTokens?: number;
+  inputModalities?: string[];
+  outputModalities?: string[];
+  /** OpenAI/OpenRouter-style parameter names (`tools`, `reasoning`, `structured_outputs`, ...). */
+  supportedParameters?: string[];
+}
+
+/** A model an upstream offers. `id` is the upstream name, i.e. what follows `provider/` in requests. */
+export interface ModelInfo extends ModelDetails {
+  id: string;
+  /** Fields the upstream did not report and a catalog filled in: field name -> source (e.g. `openrouter`). */
+  sources?: Partial<Record<keyof ModelDetails, string>>;
 }
 
 export type ModelListCall = Pick<UpstreamCall, "baseUrl" | "token" | "meta" | "signal">;

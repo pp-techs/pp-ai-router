@@ -35,8 +35,11 @@ const BASE_MODELS = [
   "gpt-oss-120b-medium",
 ];
 
-/** Fixed model list shown in the admin UI and `/v1/models`: the base ("picker") models above. */
-export const ANTIGRAVITY_MODELS: readonly ModelInfo[] = BASE_MODELS.map((id) => ({ id }));
+/** Fixed model list shown in the admin UI and `/v1/models`: the base ("picker") models above, with their documented output ceiling. */
+export const ANTIGRAVITY_MODELS: readonly ModelInfo[] = BASE_MODELS.map((id) => {
+  const maxOutputTokens = maxOutputTokensForModel(id);
+  return maxOutputTokens === undefined ? { id } : { id, maxOutputTokens };
+});
 
 const MODEL_ALIASES: Record<string, string> = {
   "gemini-3.1-pro-high": "gemini-pro-agent",

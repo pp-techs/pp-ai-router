@@ -8,11 +8,11 @@ import { startQuotaSync } from "./quota/service.ts";
 
 const config = loadConfig();
 const log = createLogger();
-const { app, pricing, models, quota } = createServices(config, { log });
+const { app, pricing, metadata, models, quota } = createServices(config, { log });
 
 const stopPricing = config.PRICING_SYNC_ENABLED
   ? startPricingScheduler(
-      { store: pricing, log: (m) => log.info(m) },
+      { store: pricing, metadata, log: (m) => log.info(m) },
       config.PRICING_SYNC_INTERVAL_HOURS * 3_600_000,
     )
   : () => {};
