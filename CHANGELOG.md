@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.7.0] — 2026-10-10
+
+Anthropic Subscription provider (`anthropic-subscription`), following opencodex: Claude models billed to a signed-in Claude Pro/Max account. Paste-flow PKCE sign-in and refresh, the Claude Code identity on every request (betas, headers, first system block, `custom_` tool-name wrapping), model discovery, and account quota (5-hour, weekly and per-model windows) that parks a spent account until it resets. The Messages translation is shared with the `anthropic` provider (`createAnthropicAdapter`).
+
 ## [0.6.0] — 2026-10-10
 
 Add audit log and loggers feature for tracking administrative operations and gateway traffic events with dedicated audit log dashboard page.
