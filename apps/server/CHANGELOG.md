@@ -1,5 +1,11 @@
 # server
 
+## 0.6.0
+
+### Minor Changes
+
+- e9b031f: Add audit log and loggers feature for tracking administrative operations and gateway traffic events with dedicated audit log dashboard page.
+
 ## 0.5.0
 
 ### Minor Changes
