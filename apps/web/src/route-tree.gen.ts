@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
+import { Route as AppAuditRouteImport } from './routes/_app/audit'
 import { Route as AppKeysRouteImport } from './routes/_app/keys'
 import { Route as AppModelsRouteRouteImport } from './routes/_app/models/route'
 import { Route as AppProvidersRouteRouteImport } from './routes/_app/providers/route'
@@ -39,6 +40,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppSplatRoute = AppSplatRouteImport.update({
   id: '/$',
   path: '/$',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAuditRoute = AppAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => AppRoute,
 } as any)
 const AppKeysRoute = AppKeysRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/models': typeof AppModelsRouteRouteWithChildren
   '/providers': typeof AppProvidersRouteRouteWithChildren
   '/$': typeof AppSplatRoute
+  '/audit': typeof AppAuditRoute
   '/keys': typeof AppKeysRoute
   '/usage': typeof AppUsageRoute
   '/models/aliases': typeof AppModelsAliasesRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/$': typeof AppSplatRoute
+  '/audit': typeof AppAuditRoute
   '/keys': typeof AppKeysRoute
   '/usage': typeof AppUsageRoute
   '/': typeof AppIndexRoute
@@ -113,6 +121,7 @@ export interface FileRoutesById {
   '/_app/models': typeof AppModelsRouteRouteWithChildren
   '/_app/providers': typeof AppProvidersRouteRouteWithChildren
   '/_app/$': typeof AppSplatRoute
+  '/_app/audit': typeof AppAuditRoute
   '/_app/keys': typeof AppKeysRoute
   '/_app/usage': typeof AppUsageRoute
   '/_app/': typeof AppIndexRoute
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
     | '/models'
     | '/providers'
     | '/$'
+    | '/audit'
     | '/keys'
     | '/usage'
     | '/models/aliases'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
   to:
     | '/login'
     | '/$'
+    | '/audit'
     | '/keys'
     | '/usage'
     | '/'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/_app/models'
     | '/_app/providers'
     | '/_app/$'
+    | '/_app/audit'
     | '/_app/keys'
     | '/_app/usage'
     | '/_app/'
@@ -195,6 +207,13 @@ declare module '@tanstack/react-router' {
       path: '/$'
       fullPath: '/$'
       preLoaderRoute: typeof AppSplatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/audit': {
+      id: '/_app/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AppAuditRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/keys': {
@@ -287,6 +306,7 @@ interface AppRouteChildren {
   AppModelsRouteRoute: typeof AppModelsRouteRouteWithChildren
   AppProvidersRouteRoute: typeof AppProvidersRouteRouteWithChildren
   AppSplatRoute: typeof AppSplatRoute
+  AppAuditRoute: typeof AppAuditRoute
   AppKeysRoute: typeof AppKeysRoute
   AppUsageRoute: typeof AppUsageRoute
   AppIndexRoute: typeof AppIndexRoute
@@ -296,6 +316,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppModelsRouteRoute: AppModelsRouteRouteWithChildren,
   AppProvidersRouteRoute: AppProvidersRouteRouteWithChildren,
   AppSplatRoute: AppSplatRoute,
+  AppAuditRoute: AppAuditRoute,
   AppKeysRoute: AppKeysRoute,
   AppUsageRoute: AppUsageRoute,
   AppIndexRoute: AppIndexRoute,

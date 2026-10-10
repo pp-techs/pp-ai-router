@@ -5,7 +5,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { toast } from "../lib/toast.ts";
-import type { UsageFilter, UsageGroup } from "./types.ts";
+import type { AuditLogFilter, UsageFilter, UsageGroup } from "./types.ts";
 
 /** Query keys are hierarchical: invalidating `providers` also refreshes every provider's credentials. */
 export const qk = {
@@ -23,6 +23,7 @@ export const qk = {
   usageEvents: ["usage", "events"] as const,
   usageSummary: (group: UsageGroup, range: string) => ["usage", "summary", group, range] as const,
   usageTimeline: (range: string) => ["usage", "timeline", range] as const,
+  auditLogs: (filter?: AuditLogFilter) => ["audit-logs", filter] as const,
   prices: (q: string) => ["pricing", "search", q] as const,
   priceLookup: (model: string) => ["pricing", "lookup", model] as const,
   pricingSync: ["pricing", "sync"] as const,

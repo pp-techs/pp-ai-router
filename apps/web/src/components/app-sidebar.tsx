@@ -1,5 +1,6 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import {
+  ClipboardListIcon,
   ChevronsUpDownIcon,
   KeyRoundIcon,
   LayoutDashboardIcon,
@@ -41,7 +42,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const NAV: {
-  to: "/" | "/providers" | "/models" | "/keys" | "/usage";
+  to: "/" | "/providers" | "/models" | "/keys" | "/usage" | "/audit";
   label: string;
   icon: LucideIcon;
 }[] = [
@@ -50,6 +51,7 @@ const NAV: {
   { to: "/models", label: "Models", icon: NetworkIcon },
   { to: "/keys", label: "API keys", icon: KeyRoundIcon },
   { to: "/usage", label: "Usage", icon: TrendingUpIcon },
+  { to: "/audit", label: "Audit logs", icon: ClipboardListIcon },
 ];
 
 function NavMain() {

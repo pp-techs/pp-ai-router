@@ -26,6 +26,7 @@ import type { LoginStartInfo } from "../oauth/types.ts";
 import type { QuotaService, QuotaStatus } from "../quota/service.ts";
 import type { Registry } from "../registry.ts";
 import type { Logger } from "../logger.ts";
+import type { AuditLogStore } from "../audit/store.ts";
 
 export interface AdminDeps {
   adminToken: string;
@@ -41,6 +42,7 @@ export interface AdminDeps {
   models: ModelCatalog;
   quota: QuotaService;
   log: Logger;
+  audit?: AuditLogStore;
   now?: () => number;
 }
 
@@ -160,7 +162,8 @@ function parseLimit(input: z.infer<typeof limitInput>) {
 }
 
 export function createAdminApp(deps: AdminDeps): Hono {
-  const { db, box, registry, pool, keys, meter, pricing, adapters, logins, models, quota } = deps;
+  const { db, box, registry, pool, keys, meter, pricing, adapters, logins, models, quota, audit } =
+    deps;
   const now = deps.now ?? Date.now;
   const app = new Hono();
   const expected = sha(deps.adminToken);
@@ -195,6 +198,31 @@ export function createAdminApp(deps: AdminDeps): Hono {
     enabled: k.enabled,
     created_at: k.createdAt,
     limits: listLimits(db, k.id).map(limitView),
+  });
+
+  // ---- audit logs -----------------------------------------------------------------------
+  app.get("/audit-logs", (c) => {
+    if (!audit) return c.json({ data: [] });
+    const q = c.req.query();
+    const category = q.category === "admin" || q.category === "gateway" ? q.category : undefined;
+    const status = q.status === "success" || q.status === "failure" ? q.status : undefined;
+    const since = q.since ? Number(q.since) : undefined;
+    const until = q.until ? Number(q.until) : undefined;
+    const before = q.before ? Number(q.before) : undefined;
+    const limit = q.limit ? Number(q.limit) : undefined;
+    const rows = audit.list({
+      category,
+      action: q.action,
+      actor: q.actor,
+      target_type: q.target_type,
+      target_id: q.target_id,
+      status,
+      since: Number.isFinite(since) ? since : undefined,
+      until: Number.isFinite(until) ? until : undefined,
+      before: Number.isFinite(before) ? before : undefined,
+      limit: Number.isFinite(limit) ? limit : undefined,
+    });
+    return c.json({ data: rows });
   });
 
   // ---- providers -------------------------------------------------------------------------
@@ -255,6 +283,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
       now(),
     );
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "provider.create",
+      actor: "admin",
+      targetType: "provider",
+      targetId: b.id,
+      status: "success",
+      statusCode: 201,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { type: b.type, base_url: baseUrl, key_strategy: b.key_strategy },
+    });
     return c.json({ id: b.id }, 201);
   });
 
@@ -274,6 +313,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
       id,
     );
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "provider.update",
+      actor: "admin",
+      targetType: "provider",
+      targetId: id,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: b,
+    });
     return c.json({ id });
   });
 
@@ -282,6 +332,16 @@ export function createAdminApp(deps: AdminDeps): Hono {
       db.prepare("DELETE FROM providers WHERE id = ?").run(c.req.param("id")).changes > 0;
     if (!removed) throw notFound("Provider");
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "provider.delete",
+      actor: "admin",
+      targetType: "provider",
+      targetId: c.req.param("id"),
+      status: "success",
+      statusCode: 204,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    });
     return c.body(null, 204);
   });
 
@@ -376,6 +436,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
       ).run(provider, model, now());
     }
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: enabled ? "model.enable" : "model.disable",
+      actor: "admin",
+      targetType: "model",
+      targetId: `${provider}/${model}`,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { provider, model, enabled },
+    });
     return c.json({ provider, id: model, enabled });
   });
   app.get("/providers/:id/credentials", (c) => {
@@ -459,6 +530,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
       now(),
     );
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "credential.create",
+      actor: "admin",
+      targetType: "credential",
+      targetId: id,
+      status: "success",
+      statusCode: 201,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { providerId, label: b.label, weight: b.weight, priority: b.priority },
+    });
     return c.json({ id }, 201);
   });
 
@@ -492,6 +574,23 @@ export function createAdminApp(deps: AdminDeps): Hono {
       db.prepare(`UPDATE credentials SET ${assignments} WHERE id = ?`).run(...columns.values(), id);
     }
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "credential.update",
+      actor: "admin",
+      targetType: "credential",
+      targetId: id,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: {
+        label: b.label,
+        weight: b.weight,
+        priority: b.priority,
+        enabled: b.enabled,
+        has_new_secret: b.secret !== undefined,
+      },
+    });
     return c.json({ id });
   });
 
@@ -500,6 +599,16 @@ export function createAdminApp(deps: AdminDeps): Hono {
       db.prepare("DELETE FROM credentials WHERE id = ?").run(c.req.param("id")).changes > 0;
     if (!removed) throw notFound("Credential");
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "credential.delete",
+      actor: "admin",
+      targetType: "credential",
+      targetId: c.req.param("id"),
+      status: "success",
+      statusCode: 204,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    });
     return c.body(null, 204);
   });
 
@@ -596,6 +705,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
        ON CONFLICT(alias) DO UPDATE SET targets = excluded.targets`,
     ).run(alias, JSON.stringify(b.targets), now());
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "alias.update",
+      actor: "admin",
+      targetType: "alias",
+      targetId: alias,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { targets: b.targets },
+    });
     return c.json({ alias });
   });
 
@@ -604,6 +724,16 @@ export function createAdminApp(deps: AdminDeps): Hono {
       db.prepare("DELETE FROM model_aliases WHERE alias = ?").run(c.req.param("alias")).changes > 0;
     if (!removed) throw notFound("Alias");
     registry.reload();
+    audit?.record({
+      category: "admin",
+      action: "alias.delete",
+      actor: "admin",
+      targetType: "alias",
+      targetId: c.req.param("alias"),
+      status: "success",
+      statusCode: 204,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    });
     return c.body(null, 204);
   });
 
@@ -618,6 +748,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
       now(),
     );
     for (const l of limits) keys.addLimit(key.id, l, now());
+    audit?.record({
+      category: "admin",
+      action: "key.create",
+      actor: "admin",
+      targetType: "key",
+      targetId: key.id,
+      status: "success",
+      statusCode: 201,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { name: b.name, allowed_models: b.allowed_models, expires_at: b.expires_at },
+    });
     return c.json({ ...keyView(key), key: plaintext }, 201);
   });
 
@@ -636,11 +777,32 @@ export function createAdminApp(deps: AdminDeps): Hono {
     if (b.enabled !== undefined) patch.enabled = b.enabled;
     const key = keys.update(c.req.param("id"), patch);
     if (!key) throw notFound("Key");
+    audit?.record({
+      category: "admin",
+      action: "key.update",
+      actor: "admin",
+      targetType: "key",
+      targetId: c.req.param("id"),
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: patch,
+    });
     return c.json(keyView(key));
   });
 
   app.delete("/keys/:id", (c) => {
     if (!keys.delete(c.req.param("id"))) throw notFound("Key");
+    audit?.record({
+      category: "admin",
+      action: "key.delete",
+      actor: "admin",
+      targetType: "key",
+      targetId: c.req.param("id"),
+      status: "success",
+      statusCode: 204,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    });
     return c.body(null, 204);
   });
 
@@ -648,11 +810,32 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const key = keys.get(c.req.param("id"));
     if (!key) throw notFound("Key");
     const limit = keys.addLimit(key.id, parseLimit(await parse(c, limitInput)), now());
+    audit?.record({
+      category: "admin",
+      action: "limit.create",
+      actor: "admin",
+      targetType: "limit",
+      targetId: limit.id,
+      status: "success",
+      statusCode: 201,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { key_id: key.id, metric: limit.metric, max: limit.max },
+    });
     return c.json(limitView(limit), 201);
   });
 
   app.delete("/limits/:id", (c) => {
     if (!keys.deleteLimit(c.req.param("id"))) throw notFound("Limit");
+    audit?.record({
+      category: "admin",
+      action: "limit.delete",
+      actor: "admin",
+      targetType: "limit",
+      targetId: c.req.param("id"),
+      status: "success",
+      statusCode: 204,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    });
     return c.body(null, 204);
   });
 
@@ -755,11 +938,32 @@ export function createAdminApp(deps: AdminDeps): Hono {
       },
       now(),
     );
+    audit?.record({
+      category: "admin",
+      action: "pricing.override",
+      actor: "admin",
+      targetType: "pricing",
+      targetId: b.model,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { model: b.model, input_per_1m: b.input_per_1m, output_per_1m: b.output_per_1m },
+    });
     return c.json({ model: b.model });
   });
   app.delete("/pricing/overrides", (c) => {
     const model = c.req.query("model");
     if (!model || !pricing.deleteOverride(model)) throw notFound("Override");
+    audit?.record({
+      category: "admin",
+      action: "pricing.delete_override",
+      actor: "admin",
+      targetType: "pricing",
+      targetId: model,
+      status: "success",
+      statusCode: 204,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    });
     return c.body(null, 204);
   });
 

@@ -21,6 +21,7 @@ import { PricingStore } from "./pricing/store.ts";
 import { ADAPTERS, type ProviderAdapter } from "./providers/adapter.ts";
 import { ModelCatalog } from "./models.ts";
 import { Registry } from "./registry.ts";
+import { AuditLogStore } from "./audit/store.ts";
 
 export interface Services {
   app: Hono;
@@ -34,6 +35,7 @@ export interface Services {
   logins: LoginSessions;
   models: ModelCatalog;
   quota: QuotaService;
+  audit: AuditLogStore;
 }
 
 export type AppConfig = Pick<
@@ -69,7 +71,8 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
   const pool = new CredentialPool(registry, recent, now);
   const keys = new VirtualKeyStore(db);
   const meter = new UsageMeter(db);
-  const accounting = new Accounting(db, meter, pool, now);
+  const audit = new AuditLogStore(db, log, now);
+  const accounting = new Accounting(db, meter, pool, now, audit);
   const tokens = new TokenManager(registry, adapters, log, now);
   const logins = new LoginSessions(db, box, registry, adapters, now);
   const models = new ModelCatalog(db, registry, tokens, adapters, log, now);
@@ -152,13 +155,14 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
       models,
       quota,
       log,
+      audit,
       now,
     }),
   );
 
   if (config.WEB_DIST) mountWeb(app, resolve(config.WEB_DIST), log);
 
-  return { app, db, pricing, registry, pool, keys, meter, tokens, logins, models, quota };
+  return { app, db, pricing, registry, pool, keys, meter, tokens, logins, models, quota, audit };
 }
 
 /**

@@ -349,3 +349,34 @@ export interface ProviderQuotaReport {
   supported: boolean;
   data: AccountQuota[];
 }
+
+export type AuditCategory = "admin" | "gateway";
+export type AuditStatus = "success" | "failure";
+
+export interface AuditLog {
+  id: number;
+  ts: number;
+  category: AuditCategory;
+  action: string;
+  actor: string;
+  target_type: string | null;
+  target_id: string | null;
+  status: AuditStatus;
+  status_code: number | null;
+  ip: string | null;
+  details: string | null;
+  latency_ms: number | null;
+}
+
+export interface AuditLogFilter {
+  category?: AuditCategory;
+  action?: string;
+  actor?: string;
+  target_type?: string;
+  target_id?: string;
+  status?: AuditStatus;
+  since?: number;
+  until?: number;
+  before?: number;
+  limit?: number;
+}

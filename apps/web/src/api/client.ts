@@ -1,5 +1,7 @@
 import { request } from "./http.ts";
 import type {
+  AuditLog,
+  AuditLogFilter,
   Alias,
   AliasTarget,
   CreatedKey,
@@ -121,6 +123,9 @@ export const api = {
     request<UsageTimeline>("GET", "/admin/usage/timeline", {
       query: { since, bucket_ms: bucketMs },
     }),
+
+  auditLogs: (filter?: AuditLogFilter) =>
+    unwrap(request<List<AuditLog>>("GET", "/admin/audit-logs", { query: { ...filter } })),
 
   prices: (q: string) => unwrap(request<List<Price>>("GET", "/admin/pricing", { query: { q } })),
   priceLookup: (model: string) =>
