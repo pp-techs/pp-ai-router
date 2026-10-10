@@ -12,7 +12,7 @@
     },
     "apps/server": {
       "name": "server",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "dependencies": {
         "@hono/node-server": "^2.1.3",
         "hono": "^4.13.13",
@@ -26,7 +26,7 @@
     },
     "apps/web": {
       "name": "web",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
         "@buiducnhat/better-modal": "^0.0.6",
