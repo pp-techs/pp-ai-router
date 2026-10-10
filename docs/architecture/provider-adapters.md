@@ -4,16 +4,19 @@
 
 `providers/adapter.ts` defines `ProviderAdapter`; `ADAPTERS` maps a provider `type` to its adapter. An adapter turns the canonical OpenAI chat-completions request (`UpstreamCall.body`, model already rewritten) into one upstream call and returns a `Response` in OpenAI shape: JSON when `stream` is false, SSE (usage in the final chunk) when true. Non-2xx upstream responses are returned as-is so the gateway can classify them; only transport errors throw. `providers/chunks.ts` builds/aggregates the OpenAI chunk shape.
 
-| `type`          | Adapter                      | Credential                 | Models                          | Origin                 |
-| --------------- | ---------------------------- | -------------------------- | ------------------------------- | ---------------------- |
-| `openai-compat` | `providers/openai-compat.ts` | API key (Bearer)           | fetched `GET {base_url}/models` | original               |
-| `anthropic`     | `providers/anthropic.ts`     | API key (`x-api-key`)      | fetched, paginated              | adapted from opencodex |
-| `antigravity`   | `providers/antigravity/`     | Google OAuth (paste flow)  | static list                     | adapted from opencodex |
-| `kiro`          | `providers/kiro/`            | AWS SSO OIDC (device flow) | static list                     | adapted from opencodex |
+| `type`                   | Adapter                             | Credential                        | Models                          | Origin                 |
+| ------------------------ | ----------------------------------- | --------------------------------- | ------------------------------- | ---------------------- |
+| `openai-compat`          | `providers/openai-compat.ts`        | API key (Bearer)                  | fetched `GET {base_url}/models` | original               |
+| `anthropic`              | `providers/anthropic.ts`            | API key (`x-api-key`)             | fetched, paginated              | adapted from opencodex |
+| `anthropic-subscription` | `providers/anthropic-subscription/` | Claude Pro/Max OAuth (paste flow) | fetched, paginated              | adapted from opencodex |
+| `antigravity`            | `providers/antigravity/`            | Google OAuth (paste flow)         | static list                     | adapted from opencodex |
+| `kiro`                   | `providers/kiro/`                   | AWS SSO OIDC (device flow)        | static list                     | adapted from opencodex |
 
 The adapted adapters keep opencodex's wire knowledge but target this repo's chat-completions interface; see [../project-pdr/opencodex-origin.md](../project-pdr/opencodex-origin.md) for what was ported and what was not.
 
-Optional adapter members: `oauth` (enables login + refresh), `staticModels` (wins over `listModels`), `quota` (account allowance, Kiro and Antigravity only), `defaultBaseUrl` (null = `base_url` mandatory).
+Optional adapter members: `oauth` (enables login + refresh), `staticModels` (wins over `listModels`), `quota` (account allowance: Kiro, Antigravity and Anthropic Subscription), `defaultBaseUrl` (null = `base_url` mandatory).
+
+`anthropic` and `anthropic-subscription` share one Messages translation, `createAnthropicAdapter(flavor)` in `providers/anthropic.ts`. A flavor supplies the credential headers and may rewrite the translated request (`prepare`) and each answer chunk (`restore`); the subscription flavor uses these for the Claude Code identity block and `custom_` tool-name wrapping.
 
 ## Registry and pool
 
@@ -34,7 +37,7 @@ sequenceDiagram
   OP-->>Admin: device (user code + URL) or paste (auth URL)
   alt device (Kiro)
     LS->>OP: poll() until approved / expired
-  else paste (Antigravity)
+  else paste (Antigravity, Anthropic Subscription)
     Admin->>LS: POST /admin/oauth/sessions/:id/complete {input}
     LS->>OP: complete(state, input)
   end
@@ -48,7 +51,7 @@ sequenceDiagram
 
 ## Account quota
 
-`QuotaService` (`quota/service.ts`) reads each OAuth account's allowance through `adapter.quota()` (`providers/kiro/quota.ts`, `providers/antigravity/quota.ts`; shared types and parsing helpers in `quota/`). Readings are cached (10 min, failures 1 min) and probes are single-flight; a token is resolved through `TokenManager` (with one forced refresh on 401). An account whose reading is `exhausted` is parked in `CredentialPool` (`park(id, until)`, separate from the failure cooldown and not cleared by a successful request) until the reset time. Triggers: the admin endpoints (`GET /admin/providers/:id/quota`, `/admin/credentials/:id/quota`), a periodic sync (`QUOTA_SYNC_INTERVAL_MINUTES`) and a 429 from an OAuth account in the request pipeline (at most one probe a minute per account).
+`QuotaService` (`quota/service.ts`) reads each OAuth account's allowance through `adapter.quota()` (`providers/kiro/quota.ts`, `providers/antigravity/quota.ts`, `providers/anthropic-subscription/quota.ts`; shared types and parsing helpers in `quota/`). Readings are cached (10 min, failures 1 min) and probes are single-flight; a token is resolved through `TokenManager` (with one forced refresh on 401). An account whose reading is `exhausted` is parked in `CredentialPool` (`park(id, until)`, separate from the failure cooldown and not cleared by a successful request) until the reset time. Triggers: the admin endpoints (`GET /admin/providers/:id/quota`, `/admin/credentials/:id/quota`), a periodic sync (`QUOTA_SYNC_INTERVAL_MINUTES`) and a 429 from an OAuth account in the request pipeline (at most one probe per account per minute).
 
 ## Secrets at rest
 

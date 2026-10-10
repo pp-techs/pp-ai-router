@@ -82,6 +82,26 @@ Subscription accounts have an allowance the upstream reports per account. `GET /
 
 **Inbound**: `POST /v1/messages` (JSON or SSE) accepts Anthropic requests (`x-api-key` or `Authorization: Bearer` with a virtual key), so Claude Code and the Anthropic SDKs work against the router: `ANTHROPIC_BASE_URL=http://router:8080 ANTHROPIC_API_KEY=sk-pp-…`. It runs the same pipeline as chat completions (limits, aliases/routing, credential pool, accounting) against **any** provider type, and answers in Anthropic's format with `{type:"error",error:{type,message}}` errors. `top_k` and `thinking` are forwarded to the upstream as extra fields (an OpenAI-compat upstream that rejects unknown fields will 400). Server tools (`web_search_*`, ...) and `count_tokens` are not supported.
 
+## Anthropic Subscription
+
+Provider type `anthropic-subscription` ("Anthropic Subscription"): Claude models billed to a signed-in **Claude Pro/Max** account instead of an API key. Ported from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex) (MIT). It is not an official API for third-party use: the OAuth client and request shape mimic the Claude Code CLI, and Anthropic can change or block that at any time (check the subscription terms before using it for anything but your own work).
+
+```bash
+curl -H "$A" -H "$J" localhost:8080/admin/providers -d '{"id":"sub","type":"anthropic-subscription"}'   # base_url defaults to https://api.anthropic.com/v1
+curl -H "$A" -H "$J" localhost:8080/admin/providers/sub/oauth/start -d '{}'                              # -> { session_id, auth_url, ... }
+# open auth_url, sign in to Claude; the browser then lands on http://localhost:54545/callback?code=…&state=… which cannot load: that is expected.
+curl -H "$A" -H "$J" localhost:8080/admin/oauth/sessions/$SID/complete -d '{"input":"<the full URL from the address bar>"}'
+curl -H "authorization: Bearer sk-pp-…" -H "$J" localhost:8080/v1/chat/completions -d '{"model":"sub/claude-sonnet-4-5","messages":[{"role":"user","content":"hi"}]}'
+```
+
+- **Wire**: the same Messages translation as the `anthropic` provider (thinking, caching, usage, history repair; see above). The account's access token is sent as `Authorization: Bearer` with `anthropic-beta: claude-code-20250219,oauth-2025-04-20`, the Claude Code client headers (`X-App`, `X-Stainless-*`, a per-token `X-Claude-Code-Session-Id`, a fresh `x-client-request-id`), and the Claude Code identity as the **first system block** (the client's own system prompt follows as the second). Without these Anthropic refuses a subscription token.
+- **Tool names**: a subscription token rejects arbitrary tool names, so every client tool is sent as `custom_<name>` (in definitions, `tool_choice` and the tool calls of the history) and the prefix is removed from the answer, streamed or not. Anthropic's own names (`web_search`, `code_execution`, `text_editor`, `computer`) are left alone. Unlike the reference, a client tool that already starts with `custom_` is wrapped too (`custom_custom_x`), so the round trip is lossless.
+- **Login** is a paste flow (nothing on the router listens on the registered `localhost:54545` redirect). The pasted text may be the full URL, its query string, `code#state` (what Claude's own code page shows) or the bare code; a URL/query must carry the `state` of the login that was started. PKCE (S256) is used. The account is labelled with its email; its provider-side id is stored as `account_uuid`.
+- **Refresh**: `invalid_grant` / `invalid_client` / `unauthorized_client` (as `error` or `error.type`, HTTP 400/401) retire the account until it signs in again; anything else is transient and only cools it down. Refresh tokens rotate and are re-stored on every refresh. Unlike the reference there is no background refresh and no refresh-intent ledger: tokens are refreshed on demand shortly before expiry, or once after an upstream 401.
+- **Models**: fetched from `GET {base_url}/models` with the account's token, like the `anthropic` provider.
+- **Quota**: `GET {origin of base_url}/api/oauth/usage` gives a `5h` and a `Weekly` window for the account plus `Opus weekly` / `Sonnet weekly` / `Fable weekly` ones (also from the `limits` array; only those three family labels are ever published). The account is parked until the reset when the 5-hour or the weekly window is spent; a spent family window never parks it. The endpoint is rate limited upstream, so readings are cached like any other (`QUOTA_SYNC_INTERVAL_MINUTES`).
+- **Not ported**: observed-client passthrough lanes (a caller's Claude Code identity, betas and billing preamble), the multi-pool/`anthropic2` routing, account-identity proofs, local Claude Code token import, the reset-grant claim, and image re-encoding. A spent allowance surfaces as the upstream 429, which the pool turns into a cooldown and a quota check.
+
 ## Antigravity
 
 Provider type `antigravity` ("Google Antigravity"): Gemini, Claude and gpt-oss models through Google's Cloud Code Assist backend (`v1internal`), billed to the signed-in Google account's Antigravity subscription. Ported from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex) (MIT). It is not an official API: the OAuth client and request shape mimic the Antigravity desktop IDE, and Google can change or block that at any time.

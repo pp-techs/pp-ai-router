@@ -2,6 +2,7 @@ import type { OAuthProvider } from "../oauth/types.ts";
 import type { Quota, QuotaCall } from "../quota/types.ts";
 import { antigravity } from "./antigravity/adapter.ts";
 import { anthropic } from "./anthropic.ts";
+import { anthropicSubscription } from "./anthropic-subscription/adapter.ts";
 import { kiro } from "./kiro/adapter.ts";
 import { openAiCompat } from "./openai-compat.ts";
 
@@ -61,6 +62,7 @@ export const ADAPTERS: Readonly<Record<string, ProviderAdapter>> = {
   [openAiCompat.type]: openAiCompat,
   [antigravity.type]: antigravity,
   [anthropic.type]: anthropic,
+  [anthropicSubscription.type]: anthropicSubscription,
   [kiro.type]: kiro,
 };
 

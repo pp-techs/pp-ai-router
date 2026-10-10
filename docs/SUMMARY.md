@@ -1,6 +1,6 @@
 # Documentation Summary
 
-pp-ai-router — a self-hosted LLM router: one OpenAI- and Anthropic-compatible endpoint in front of many upstream providers, with virtual keys, budgets, credential pooling and pricing. Provider adapters for Anthropic, Kiro and Google Antigravity are adapted from [opencodex](https://github.com/lidge-jun/opencodex) (MIT).
+pp-ai-router — a self-hosted LLM router: one OpenAI- and Anthropic-compatible endpoint in front of many upstream providers, with virtual keys, budgets, credential pooling and pricing. Provider adapters for Anthropic (API key and Claude subscription), Kiro and Google Antigravity are adapted from [opencodex](https://github.com/lidge-jun/opencodex) (MIT).
 Stack: Node 24, Hono, `node:sqlite`, Zod (server); React 19, Vite, Tailwind 4, TanStack Query (admin UI); Vite+ (`vp`) toolchain, bun, Docker.
 
 ## Agent Context Guide
@@ -48,7 +48,7 @@ Product goals, use cases, business rules, and constraints.
 
 Per-package READMEs next to the code.
 
-| File                                              | Description                                                                                |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [apps/server/README.md](../apps/server/README.md) | Concepts, API, per-provider (Anthropic, Antigravity, Kiro) behaviour and ported-from notes |
-| [apps/web/README.md](../apps/web/README.md)       | Admin UI dev workflow and conventions                                                      |
+| File                                              | Description                                                                                                        |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| [apps/server/README.md](../apps/server/README.md) | Concepts, API, per-provider (Anthropic, Anthropic Subscription, Antigravity, Kiro) behaviour and ported-from notes |
+| [apps/web/README.md](../apps/web/README.md)       | Admin UI dev workflow and conventions                                                                              |

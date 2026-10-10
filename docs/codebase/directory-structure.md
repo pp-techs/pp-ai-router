@@ -44,7 +44,7 @@ pp-ai-router/
 | `gateway/`                    | `chat.ts` shared pipeline + `/v1/chat/completions`, `messages.ts` `/v1/messages`, `accounting.ts`, `usage.ts` |
 | `governance/`                 | `virtual-keys.ts` (keys, model globs), `limits.ts` (`UsageMeter`, windows)                                    |
 | `pricing/`                    | `store.ts`, `cost.ts`, `sync.ts`, `litellm.ts`, `openrouter.ts`, `types.ts`                                   |
-| `oauth/`                      | `types.ts`, `login-sessions.ts`, `token-manager.ts`                                                           |
+| `oauth/`                      | `types.ts`, `login-sessions.ts`, `token-manager.ts`, `paste.ts` (PKCE, pasted redirect parsing)               |
 | `models.ts`                   | `ModelCatalog` stored model lists + sync scheduler                                                            |
 | `quota/`                      | `service.ts` (`QuotaService`: cache, probes, pool parking, sync), `types.ts`, `wire.ts` (parsing helpers)     |
 | `admin/routes.ts`             | `/admin/*` API behind `ADMIN_TOKEN`                                                                           |
@@ -53,13 +53,14 @@ pp-ai-router/
 
 ### `providers/`
 
-| Path                                             | Notes                                                                |
-| ------------------------------------------------ | -------------------------------------------------------------------- |
-| `adapter.ts`                                     | `ProviderAdapter` contract and `ADAPTERS` registry                   |
-| `openai-compat.ts`, `chunks.ts`, `model-list.ts` | Original: generic upstream, OpenAI chunk helpers, model-list parsing |
-| `anthropic.ts`, `anthropic/`                     | **From opencodex**, except `json.ts`                                 |
-| `antigravity/`                                   | **From opencodex**, except `json.ts`                                 |
-| `kiro/`                                          | **From opencodex** (all files)                                       |
+| Path                                             | Notes                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `adapter.ts`                                     | `ProviderAdapter` contract and `ADAPTERS` registry                             |
+| `openai-compat.ts`, `chunks.ts`, `model-list.ts` | Original: generic upstream, OpenAI chunk helpers, model-list parsing           |
+| `anthropic.ts`, `anthropic/`                     | **From opencodex**, except `json.ts`                                           |
+| `anthropic-subscription/`                        | **From opencodex** (all files): Claude Pro/Max OAuth flavour of `anthropic.ts` |
+| `antigravity/`                                   | **From opencodex**, except `json.ts`                                           |
+| `kiro/`                                          | **From opencodex** (all files)                                                 |
 
 Files adapted from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex) carry `// Adapted from lidge-jun/opencodex (MIT)` on line 1. Details: [../project-pdr/opencodex-origin.md](../project-pdr/opencodex-origin.md).
 

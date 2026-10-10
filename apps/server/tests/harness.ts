@@ -114,6 +114,8 @@ export function createHarness(
   return { clock, services, admin, chat, addProvider, newKey };
 }
 
+export type Harness = ReturnType<typeof createHarness>;
+
 export interface AnthropicUpstreamCall extends UpstreamCall {
   /** `anthropic-version` header the router sent. */
   version: string;

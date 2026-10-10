@@ -1,15 +1,12 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
+import { parseCallbackInput } from "../src/oauth/paste.ts";
 import { OAuthRefreshError, type OAuthTokens } from "../src/oauth/types.ts";
 import { ADAPTERS } from "../src/providers/adapter.ts";
 import { createAntigravityAdapter } from "../src/providers/antigravity/adapter.ts";
 import { CLIENT_ID, CLIENT_SECRET, REDIRECT_URI } from "../src/providers/antigravity/constants.ts";
 import { resolveWireModel } from "../src/providers/antigravity/models.ts";
-import {
-  createAntigravityOAuth,
-  parseCallbackInput,
-  type LoginState,
-} from "../src/providers/antigravity/oauth.ts";
+import { createAntigravityOAuth, type LoginState } from "../src/providers/antigravity/oauth.ts";
 import { resetReplay } from "../src/providers/antigravity/replay.ts";
 import { buildRequest } from "../src/providers/antigravity/request.ts";
 import { chunksFromSse, GeminiMapper } from "../src/providers/antigravity/stream.ts";

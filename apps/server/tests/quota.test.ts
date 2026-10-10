@@ -560,6 +560,7 @@ describe("quota admin API", () => {
     expect(Object.fromEntries(types.map((t) => [t.type, t.quota]))).toEqual({
       "openai-compat": false,
       anthropic: false,
+      "anthropic-subscription": true,
       antigravity: true,
       kiro: true,
     });
