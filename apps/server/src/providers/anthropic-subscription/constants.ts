@@ -1,14 +1,15 @@
-// Adapted from lidge-jun/opencodex (MIT): src/oauth/anthropic.ts, src/adapters/client-fingerprint.ts
-import { createHash } from "node:crypto";
+// Adapted from lidge-jun/opencodex (MIT): src/oauth/anthropic.ts, src/adapters/client-fingerprint.ts;
+// the Claude Code identity follows can1357/oh-my-pi (packages/ai: claude-code-fingerprint, providers/anthropic).
 
 /**
  * Every protocol constant of the Claude Pro/Max sign-in lives here. The OAuth client id is the public
- * identifier of the Claude Code CLI (not a user secret); it is the one the reference uses.
+ * identifier of the Claude Code CLI (not a user secret); it is the one both references use.
  */
 export const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 export const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 export const TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
-export const SCOPES = "org:create_api_key user:profile user:inference";
+export const SCOPES =
+  "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
 
 /** Registered redirect of the Claude Code client. Nothing listens here on the router: the admin pastes the dead URL back. */
 export const REDIRECT_URI = "http://localhost:54545/callback";
@@ -16,23 +17,58 @@ export const REDIRECT_URI = "http://localhost:54545/callback";
 export const REQUEST_TIMEOUT_MS = 30_000;
 export const LOGIN_TTL_MS = 10 * 60_000;
 
-/** Key of the provider-side account id inside `OAuthTokens.extra`. */
+/** Keys of the provider-side identity inside `OAuthTokens.extra`. */
 export const ACCOUNT_UUID_KEY = "account_uuid";
+export const ORG_UUID_KEY = "organization_uuid";
+export const ORG_NAME_KEY = "organization_name";
 
 /** Default `base_url` of the provider. */
 export const DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
 
-/** A subscription token is only accepted together with these betas. */
-export const OAUTH_BETA = "claude-code-20250219,oauth-2025-04-20";
+/** Claude Code's account-side lookup of the signed-in account and organization. */
+export const BOOTSTRAP_URL = "https://api.anthropic.com/api/claude_cli/bootstrap";
+export const BOOTSTRAP_MODEL = "claude-opus-4-8";
 
-/** A subscription token is only accepted when the first system block is the Claude Code identity. */
-export const SYSTEM_INSTRUCTION = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+/** The protocol beta every account route (token refresh, usage, models, bootstrap) needs. */
+export const OAUTH_BETA = "oauth-2025-04-20";
 
 /**
- * A subscription token rejects arbitrary tool names, so every client tool is sent as `custom_<name>`
- * and the prefix is removed again from the answer. Anthropic's own tools keep their names.
+ * The betas a Claude Code agent request carries. `effort` is added when the request asks for it.
+ * `context-1m` is deliberately absent: a subscription has no long-context credit balance, so a 1M beta
+ * is answered with a 429 whatever the prompt size.
  */
-export const TOOL_PREFIX = "custom_";
+export const MESSAGES_BETAS: readonly string[] = [
+  "claude-code-20250219",
+  OAUTH_BETA,
+  "interleaved-thinking-2025-05-14",
+  "thinking-token-count-2026-05-13",
+  "context-management-2025-06-27",
+  "prompt-caching-scope-2026-01-05",
+];
+export const EFFORT_BETA = "effort-2025-11-24";
+
+/** Betas the CLI sends on the usage probe. */
+export const USAGE_BETA = [
+  "claude-code-20250219",
+  OAUTH_BETA,
+  "interleaved-thinking-2025-05-14",
+  "redact-thinking-2026-02-12",
+  "context-management-2025-06-27",
+  "prompt-caching-scope-2026-01-05",
+  "mid-conversation-system-2026-04-07",
+  "advanced-tool-use-2025-11-20",
+  "effort-2025-11-24",
+  "extended-cache-ttl-2025-04-11",
+].join(",");
+
+/** A subscription token is only accepted when the first system blocks are the Claude Code identity. */
+export const SYSTEM_INSTRUCTION = "You are Claude Code, Anthropic's official CLI for Claude.";
+
+/**
+ * A subscription token rejects arbitrary tool names, so every client tool is sent as `_<name>` and the
+ * prefix is removed again from the answer. Anthropic's own tools keep their names.
+ */
+export const TOOL_PREFIX = "_";
 export const BUILTIN_TOOLS: Readonly<Record<string, true>> = {
   web_search: true,
   code_execution: true,
@@ -41,41 +77,52 @@ export const BUILTIN_TOOLS: Readonly<Record<string, true>> = {
 };
 
 /** `@anthropic-ai/sdk` version the Claude Code CLI bundles; pinned here so it is trivial to bump. */
-const SDK_VERSION = "0.74.0";
-export const MESSAGES_USER_AGENT = `@anthropic-ai/sdk/${SDK_VERSION}`;
+export const SDK_VERSION = "0.112.1";
 
-/**
- * Claude Code CLI version presented on the account endpoints (`/api/oauth/usage`). Upstream gates
- * response blocks on this: only the `claude-cli/<version> (external, cli)` form of a current release
- * is treated as the CLI. Bump it together with a live check.
- */
-export const CLI_VERSION = "2.1.280";
-export const CLI_USER_AGENT = `claude-cli/${CLI_VERSION} (external, cli)`;
+/** Claude Code CLI release the requests present; replaced at run time when Anthropic names a newer minimum. */
+export const DEFAULT_CLI_VERSION = "2.1.280";
 
-/** Betas the CLI sends on the usage probe. */
-export const USAGE_BETA =
-  "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05";
+/** What the Stainless SDK reports for `process.platform` / `process.arch`. */
+function stainlessOs(platform: string): string {
+  switch (platform) {
+    case "darwin":
+      return "MacOS";
+    case "win32":
+      return "Windows";
+    case "linux":
+      return "Linux";
+    case "freebsd":
+      return "FreeBSD";
+    default:
+      return `Other::${platform}`;
+  }
+}
+function stainlessArch(arch: string): string {
+  switch (arch) {
+    case "x64":
+      return "x64";
+    case "arm64":
+      return "arm64";
+    case "ia32":
+      return "x86";
+    default:
+      return `other::${arch}`;
+  }
+}
 
 /** The headers of the real Claude Code CLI; a valid token behind an empty header set is a non-first-party signature. */
 export const CLAUDE_CODE_HEADERS: Readonly<Record<string, string>> = {
-  "X-App": "cli",
+  "x-app": "cli",
+  "anthropic-dangerous-direct-browser-access": "true",
   "X-Stainless-Retry-Count": "0",
   "X-Stainless-Runtime": "node",
   "X-Stainless-Lang": "js",
   "X-Stainless-Timeout": "600",
-  "X-Stainless-Arch": process.arch,
-  "X-Stainless-OS": process.platform,
+  "X-Stainless-Arch": stainlessArch(process.arch),
+  "X-Stainless-OS": stainlessOs(process.platform),
   "X-Stainless-Package-Version": SDK_VERSION,
-  "X-Stainless-Runtime-Version": process.version.slice(1),
+  "X-Stainless-Runtime-Version": process.version,
 };
 
-/**
- * Stable per-token session id, like Claude Code's `X-Claude-Code-Session-Id`: a UUIDv4-shaped id
- * derived from the token's hash, so it stays the same across a conversation without keeping state
- * (and the token itself never leaves this function).
- */
-export function sessionId(token: string): string {
-  const h = createHash("sha256").update(`claude-code-session:${token}`, "utf8").digest("hex");
-  const variant = ((parseInt(h[16]!, 16) & 0x3) | 0x8).toString(16);
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
-}
+/** Sent with a token refresh, as the SDK's OAuth provider does (and not with the code exchange). */
+export const REFRESH_USER_AGENT = `anthropic-sdk-typescript/${SDK_VERSION} userOAuthProvider`;

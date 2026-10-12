@@ -488,6 +488,110 @@ describe("QuotaService", () => {
     expect(blocked).toEqual({ error: "no_credential", retryAt: h.clock.now + 10 * 60_000 });
   });
 
+  it("parks only the model scope whose window is spent, and puts it back when a reading says it is fine", async () => {
+    const { h, login, state, quota, pool } = await setup();
+    const id = await login("alice");
+    const opus = { name: "opus", local: false };
+    const sonnet = { name: "sonnet", local: false };
+    const resetsAt = h.clock.now + 2 * HOUR;
+    const reading = (opusUsed: number) =>
+      okQuota(10, {
+        complete: true,
+        windows: [
+          { label: "Monthly", usedPercent: 10, resetsAt: null },
+          { label: "Opus weekly", usedPercent: opusUsed, resetsAt, scope: "opus" },
+        ],
+      });
+
+    state.answer = () => reading(100);
+    await quota.get(id, { maxAgeMs: 0 });
+    expect(pool.acquire("sub", { model: "m", scope: opus })).toEqual({
+      error: "no_credential",
+      retryAt: resetsAt,
+    });
+    for (const scope of [sonnet, undefined]) {
+      const acquired = pool.acquire("sub", { model: "m", scope });
+      if ("error" in acquired) throw new Error("the account still serves other models");
+      acquired.lease.release();
+    }
+
+    state.answer = () => reading(20);
+    await quota.get(id, { maxAgeMs: 0 });
+    const back = pool.acquire("sub", { model: "m", scope: opus });
+    expect(back).toHaveProperty("lease");
+  });
+
+  it("cools an account for a local scope's 429 only, and heals it from a complete reading only", async () => {
+    const { login, state, quota, pool } = await setup();
+    const id = await login("alice");
+    const fable = { name: "fable", local: true };
+    const opus = { name: "opus", local: false };
+    const reading = (complete: boolean) =>
+      okQuota(1, {
+        complete,
+        windows: [{ label: "Fable weekly", usedPercent: 10, resetsAt: null, scope: "fable" }],
+      });
+    const limit = (scope: typeof fable) => {
+      const acquired = pool.acquire("sub", { model: "m", scope });
+      if ("error" in acquired) throw new Error("expected a credential");
+      acquired.lease.fail("rate_limited", 60_000);
+      acquired.lease.release();
+    };
+    const blocked = (scope?: typeof fable) => "error" in pool.acquire("sub", { model: "m", scope });
+
+    limit(fable);
+    expect(blocked(fable)).toBe(true);
+    expect(blocked(opus)).toBe(false);
+    expect(blocked()).toBe(false);
+
+    // A reading that cannot say whether the shared windows are fine does not vouch for the scope.
+    state.answer = () => reading(false);
+    await quota.get(id, { maxAgeMs: 0 });
+    expect(blocked(fable)).toBe(true);
+    state.answer = () => reading(true);
+    await quota.get(id, { maxAgeMs: 0 });
+    expect(blocked(fable)).toBe(false);
+
+    // A 429 for a scope that is not local is taken to be shared: the whole account cools down.
+    limit(opus);
+    expect(blocked()).toBe(true);
+  });
+
+  it("parks from what a response reveals but never lifts a park, and does not count as a probe", async () => {
+    const { h, login, state, quota, pool } = await setup();
+    const id = await login("alice");
+    await quota.get(id);
+    const resetsAt = h.clock.now + HOUR;
+    const reading = (used: number, exhausted: boolean) => ({
+      windows: [{ label: "5h", usedPercent: used, resetsAt }],
+      credits: null,
+      exhausted,
+      resetsAt: exhausted ? resetsAt : null,
+    });
+
+    quota.observe(id, reading(100, true));
+    expect(pool.acquire("sub", { model: "m" })).toEqual({
+      error: "no_credential",
+      retryAt: resetsAt,
+    });
+    // The headers' window joins the cached ones, and nothing was probed for it.
+    const status = await quota.get(id);
+    expect(status).toMatchObject({ ok: true });
+    expect(status!.ok && status!.quota.windows.map((w) => w.label)).toEqual(["Monthly", "5h"]);
+    expect(state.probes).toHaveLength(1);
+
+    quota.observe(id, reading(10, false));
+    expect(pool.acquire("sub", { model: "m" })).toHaveProperty("error");
+    await quota.get(id, { maxAgeMs: 0 });
+    expect(pool.acquire("sub", { model: "m" })).toHaveProperty("lease");
+
+    // With nothing cached, a reading from headers is not a full one: the next `get` still probes.
+    const bob = await login("bob");
+    quota.observe(bob, reading(50, false));
+    await quota.get(bob);
+    expect(state.probes).toContain("at-bob");
+  });
+
   it("has nothing to report for API keys, unknown ids or unsupported provider types", async () => {
     const { h, quota } = await setup();
     await h.admin("POST", "/providers", {

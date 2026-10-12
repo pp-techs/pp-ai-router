@@ -53,14 +53,14 @@ pp-ai-router/
 
 ### `providers/`
 
-| Path                                             | Notes                                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `adapter.ts`                                     | `ProviderAdapter` contract and `ADAPTERS` registry                             |
-| `openai-compat.ts`, `chunks.ts`, `model-list.ts` | Original: generic upstream, OpenAI chunk helpers, model-list parsing           |
-| `anthropic.ts`, `anthropic/`                     | **From opencodex**, except `json.ts`                                           |
-| `anthropic-subscription/`                        | **From opencodex** (all files): Claude Pro/Max OAuth flavour of `anthropic.ts` |
-| `antigravity/`                                   | **From opencodex**, except `json.ts`                                           |
-| `kiro/`                                          | **From opencodex** (all files)                                                 |
+| Path                                             | Notes                                                                                                                                                    |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `adapter.ts`                                     | `ProviderAdapter` contract and `ADAPTERS` registry                                                                                                       |
+| `openai-compat.ts`, `chunks.ts`, `model-list.ts` | Original: generic upstream, OpenAI chunk helpers, model-list parsing                                                                                     |
+| `anthropic.ts`, `anthropic/`                     | **From opencodex**, except `json.ts`                                                                                                                     |
+| `anthropic-subscription/`                        | **From opencodex** (Claude Pro/Max OAuth flavour of `anthropic.ts`); Claude Code identity (`identity.ts`, `xxhash64.ts`, `wire.ts`) follows **oh-my-pi** |
+| `antigravity/`                                   | **From opencodex**, except `json.ts`                                                                                                                     |
+| `kiro/`                                          | **From opencodex** (all files)                                                                                                                           |
 
 Files adapted from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex) carry `// Adapted from lidge-jun/opencodex (MIT)` on line 1. Details: [../project-pdr/opencodex-origin.md](../project-pdr/opencodex-origin.md).
 

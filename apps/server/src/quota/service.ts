@@ -3,7 +3,7 @@ import { CredentialUnavailableError, type TokenManager } from "../oauth/token-ma
 import type { CredentialPool } from "../pool/pool.ts";
 import type { ProviderAdapter } from "../providers/adapter.ts";
 import type { CredentialRuntime, ProviderRuntime, Registry } from "../registry.ts";
-import { QuotaError, type Quota, type QuotaFailure } from "./types.ts";
+import { QuotaError, type Quota, type QuotaFailure, type QuotaWindow } from "./types.ts";
 import { QUOTA_TIMEOUT_MS, failureForError } from "./wire.ts";
 
 /** A reading is reused this long: probes multiply by account count and upstreams rate-limit them. */
@@ -125,6 +125,64 @@ export class QuotaService {
     for (const id of this.#cache.keys()) if (!live.has(id)) this.#cache.delete(id);
   }
 
+  /**
+   * Takes in what a response revealed about an account (rate-limit headers) without asking the usage
+   * endpoint: the reading's windows replace the cached ones of the same label and the rest stay. It
+   * can park the account or one of its scopes, never lift a park (only a full probe can say that), and
+   * it never extends the cache entry's life, so the next `get` after the TTL still probes.
+   */
+  observe(credentialId: string, reading: Quota): void {
+    const now = this.#now();
+    const prior = this.#cache.get(credentialId);
+    const base = prior?.status.ok ? prior.status.quota : undefined;
+    const quota: Quota = base
+      ? {
+          ...reading,
+          windows: [
+            ...base.windows.filter((w) => !reading.windows.some((r) => r.label === w.label)),
+            ...reading.windows,
+          ],
+          credits: base.credits,
+          ...(base.complete === undefined ? {} : { complete: base.complete }),
+        }
+      : reading;
+    this.#cache.set(credentialId, {
+      status: { ok: true, credentialId, quota, checkedAt: now },
+      expiresAt: base ? prior!.expiresAt : now - 1,
+    });
+    this.#apply(credentialId, quota, false, now);
+  }
+
+  /**
+   * Parks the account, and the scopes whose window is spent, until they reset. A full probe (`lifts`)
+   * also puts back what it finds healthy: the account, every scope it reports, and a scope's 429
+   * cooldown when the reading is complete enough to say that 429 was not a shared one.
+   */
+  #apply(credentialId: string, quota: Quota, lifts: boolean, at: number): void {
+    const fallback = at + EXHAUSTED_FALLBACK_MS;
+    if (quota.exhausted) this.#pool.park(credentialId, quota.resetsAt ?? fallback);
+    else if (lifts) this.#pool.park(credentialId, null);
+
+    const byScope = new Map<string, QuotaWindow[]>();
+    for (const w of quota.windows) {
+      if (w.scope !== undefined) byScope.set(w.scope, [...(byScope.get(w.scope) ?? []), w]);
+    }
+    for (const [scope, windows] of byScope) {
+      const spent = windows.filter((w) => w.usedPercent >= 100);
+      if (spent.length > 0) {
+        const resets = spent.map((w) => w.resetsAt);
+        this.#pool.park(
+          credentialId,
+          resets.every((r) => r !== null) ? Math.max(...(resets as number[])) : fallback,
+          scope,
+        );
+      } else if (lifts) {
+        this.#pool.park(credentialId, null, scope);
+        if (quota.complete === true) this.#pool.healScope(credentialId, scope);
+      }
+    }
+  }
+
   #locate(
     credentialId: string,
   ): { provider: ProviderRuntime; credential: CredentialRuntime } | undefined {
@@ -185,10 +243,7 @@ export class QuotaService {
     }
 
     const checkedAt = this.#now();
-    this.#pool.park(
-      credential.id,
-      quota.exhausted ? (quota.resetsAt ?? checkedAt + EXHAUSTED_FALLBACK_MS) : null,
-    );
+    this.#apply(credential.id, quota, true, checkedAt);
     return finish({ ok: true, credentialId: credential.id, quota, checkedAt });
   }
 }

@@ -181,9 +181,11 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
       if (stream) upstreamBody.stream_options = { ...body.stream_options, include_usage: true };
 
       const tried = new Set<string>();
+      const scope = adapter.modelScope?.(target.model);
       for (let attempt = 0; attempt < provider.maxKeyAttempts; attempt++) {
         const acquired = deps.pool.acquire(target.provider, {
           model: target.model,
+          scope,
           exclude: tried,
           stickyKey,
         });
@@ -211,6 +213,7 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
               body: upstreamBody,
               stream,
               signal: AbortSignal.any([timeout.signal, c.req.raw.signal]),
+              observe: (allowance) => deps.quota.observe(credentialId, allowance),
             });
           } finally {
             clearTimeout(timer);

@@ -1,4 +1,5 @@
 // Adapted from lidge-jun/opencodex (MIT)
+import type { Quota } from "../quota/types.ts";
 import type { ModelInfo, ProviderAdapter } from "./adapter.ts";
 import { httpError, MAX_MODELS, readModelDetails } from "./model-list.ts";
 import { aggregateChunks, respond, type OpenAIChunk } from "./chunks.ts";
@@ -42,16 +43,35 @@ async function completion(chunks: Iterable<OpenAIChunk>): Promise<Response> {
   return Response.json(result);
 }
 
+/** A translated request as it goes out: the body (possibly signed bytes) and any headers that depend on it. */
+export interface PreparedRequest {
+  body: string | Uint8Array;
+  headers?: Record<string, string>;
+}
+
 /** What distinguishes one way of reaching the Messages API from another. */
 export interface AnthropicFlavor extends Pick<
   ProviderAdapter,
-  "type" | "label" | "oauth" | "quota"
+  "type" | "label" | "oauth" | "quota" | "modelScope"
 > {
   defaultBaseUrl: string;
   /** Credential headers (on top of `anthropic-version`); `messages` may carry more than `models`. */
-  headers: (token: string, purpose: "models" | "messages") => Record<string, string>;
-  /** Rewrites the translated Messages body before it is sent. */
-  prepare?: (payload: Record<string, unknown>) => Record<string, unknown>;
+  headers: (
+    token: string,
+    purpose: "models" | "messages",
+    meta: Readonly<Record<string, string>>,
+  ) => Record<string, string>;
+  /** Query string of the Messages URL. */
+  messagesQuery?: string;
+  /** Serialises the translated Messages body, and may rewrite it first. Default: plain JSON. */
+  prepare?: (
+    payload: Record<string, unknown>,
+    account: { token: string; meta: Readonly<Record<string, string>> },
+  ) => PreparedRequest;
+  /** Whether a 4xx answer names something the flavor has since fixed, so the request is worth one resend. */
+  retryRejection?: (rejection: string) => boolean;
+  /** What the headers of an answer (a refusal too) say about the account's allowance, if anything. */
+  readAllowance?: (headers: Headers) => Quota | null;
   /** Rewrites every chunk translated from the answer, in place, before the client sees it. */
   restore?: (chunk: OpenAIChunk) => void;
 }
@@ -82,8 +102,9 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
     defaultBaseUrl: flavor.defaultBaseUrl,
     ...(flavor.oauth ? { oauth: flavor.oauth } : {}),
     ...(flavor.quota ? { quota: flavor.quota } : {}),
+    ...(flavor.modelScope ? { modelScope: flavor.modelScope } : {}),
     /** `GET /models`, newest first, paginated with `after_id` until `has_more` is false. */
-    async listModels({ baseUrl, token, signal }) {
+    async listModels({ baseUrl, token, meta, signal }) {
       const models: ModelInfo[] = [];
       let afterId: string | null = null;
       for (let page = 0; page < 20 && models.length < MAX_MODELS; page++) {
@@ -91,7 +112,10 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
         url.searchParams.set("limit", "1000");
         if (afterId) url.searchParams.set("after_id", afterId);
         const res = await fetch(url, {
-          headers: { ...flavor.headers(token, "models"), "anthropic-version": ANTHROPIC_VERSION },
+          headers: {
+            ...flavor.headers(token, "models", meta),
+            "anthropic-version": ANTHROPIC_VERSION,
+          },
           signal,
         });
         if (!res.ok) throw await httpError("GET /models", res);
@@ -107,7 +131,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
       }
       return models.slice(0, MAX_MODELS);
     },
-    async call({ baseUrl, token, body, stream, signal }) {
+    async call({ baseUrl, token, meta, body, stream, signal, observe }) {
       let payload: Record<string, unknown>;
       try {
         payload = toAnthropicRequest(body, stream);
@@ -116,17 +140,41 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
         throw error;
       }
 
-      const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/messages`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: stream ? "text/event-stream" : "application/json",
-          ...flavor.headers(token, "messages"),
-          "anthropic-version": ANTHROPIC_VERSION,
-        },
-        body: JSON.stringify(flavor.prepare ? flavor.prepare(payload) : payload),
-        signal,
-      });
+      const url = new URL(`${baseUrl.replace(/\/+$/, "")}/messages`);
+      if (flavor.messagesQuery) url.search = flavor.messagesQuery;
+      const send = () => {
+        const prepared = flavor.prepare?.(payload, { token, meta }) ?? {
+          body: JSON.stringify(payload),
+        };
+        return fetch(url, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: stream ? "text/event-stream" : "application/json",
+            ...flavor.headers(token, "messages", meta),
+            ...prepared.headers,
+            "anthropic-version": ANTHROPIC_VERSION,
+          },
+          body: prepared.body,
+          signal,
+        });
+      };
+      const sendObserved = async () => {
+        const answer = await send();
+        const allowance = observe && flavor.readAllowance?.(answer.headers);
+        if (allowance) observe(allowance);
+        return answer;
+      };
+      let res = await sendObserved();
+      if (
+        flavor.retryRejection &&
+        res.status >= 400 &&
+        res.status < 500 &&
+        flavor.retryRejection(await res.clone().text())
+      ) {
+        await res.body?.cancel().catch(() => {});
+        res = await sendObserved();
+      }
       if (!res.ok) return res;
 
       const model = String(body.model);

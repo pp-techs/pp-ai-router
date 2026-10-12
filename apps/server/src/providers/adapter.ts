@@ -1,5 +1,5 @@
 import type { OAuthProvider } from "../oauth/types.ts";
-import type { Quota, QuotaCall } from "../quota/types.ts";
+import type { ModelScope, Quota, QuotaCall } from "../quota/types.ts";
 import { antigravity } from "./antigravity/adapter.ts";
 import { anthropic } from "./anthropic.ts";
 import { anthropicSubscription } from "./anthropic-subscription/adapter.ts";
@@ -18,6 +18,11 @@ export interface UpstreamCall {
   /** Whether the client asked for SSE. */
   stream: boolean;
   signal: AbortSignal;
+  /**
+   * Called with what the upstream's answer reveals about the account's allowance (rate-limit
+   * headers), for providers that send it with every response, including a refusal.
+   */
+  observe?: (quota: Quota) => void;
 }
 
 /** Fields a model description can carry besides its id; also what enrichment can fill in. */
@@ -69,6 +74,11 @@ export interface ProviderAdapter {
    * throw as-is. Absent for providers without an account-level usage endpoint.
    */
   quota?(input: QuotaCall): Promise<Quota>;
+  /**
+   * The model scope of an upstream model id, when some of the provider's models draw on an allowance
+   * of their own (`QuotaWindow.scope`). Models without one share the account's.
+   */
+  modelScope?(model: string): ModelScope | undefined;
   call(input: UpstreamCall): Promise<Response>;
 }
 

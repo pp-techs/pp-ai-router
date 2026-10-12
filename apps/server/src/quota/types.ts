@@ -4,6 +4,21 @@ export interface QuotaWindow {
   /** 0..100; how much of the allowance is spent. */
   usedPercent: number;
   resetsAt: number | null;
+  /**
+   * The model scope this meter gates (see `ModelScope`), e.g. `opus`. Absent = it gates the whole
+   * account. A spent scoped window only stops requests for models of that scope.
+   */
+  scope?: string;
+}
+
+/** A group of models of one provider that share an allowance the rest of the account does not. */
+export interface ModelScope {
+  name: string;
+  /**
+   * A 429 for a model of this scope is taken to be this scope's own cap, so it cools the account down
+   * for this scope only. Without it a 429 is taken to be shared and cools the whole account.
+   */
+  local: boolean;
 }
 
 export interface Quota {
@@ -17,6 +32,11 @@ export interface Quota {
   exhausted: boolean;
   /** When the allowance rolls over, if the upstream says. */
   resetsAt: number | null;
+  /**
+   * Every window that gates the whole account was reported. Only a complete reading may lift a
+   * scope's cooldown early: a reading without a shared window cannot say why a 429 happened.
+   */
+  complete?: boolean;
 }
 
 /** Closed diagnoses of a failed probe; never upstream text, URLs or credentials. */

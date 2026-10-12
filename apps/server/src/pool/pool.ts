@@ -1,9 +1,18 @@
 import { matchesAny } from "../glob.ts";
+import type { ModelScope } from "../quota/types.ts";
 import type { CredentialRuntime, Registry } from "../registry.ts";
 import type { RecentUsage } from "./recent-usage.ts";
 import type { Candidate } from "./selectors.ts";
 
 export type FailureKind = "rate_limited" | "server_error" | "forbidden" | "auth";
+
+/** What blocks an account for the models of one scope only. */
+interface ScopeState {
+  failCount: number;
+  cooldownUntil: number;
+  /** Out of this scope's quota until this time (set by the quota probe or the response headers). */
+  parkedUntil: number;
+}
 
 interface CredentialState {
   inflight: number;
@@ -14,6 +23,7 @@ interface CredentialState {
   lastUsedAt: number;
   /** Request start times in the last minute, for the per-credential rpm cap. */
   recent: number[];
+  scopes: Map<string, ScopeState>;
 }
 
 const BACKOFF: Record<Exclude<FailureKind, "auth">, { baseMs: number; maxMs: number }> = {
@@ -39,6 +49,8 @@ export type AcquireError =
 
 export interface AcquireOptions {
   model: string;
+  /** The model's scope, when its provider says it has one. */
+  scope?: ModelScope | undefined;
   /** Credentials that already failed this request. */
   exclude?: ReadonlySet<string>;
   /** Same key => same credential while the provider's sticky TTL lasts. */
@@ -78,15 +90,12 @@ export class CredentialPool {
     );
     const ready = usable.filter((c) => {
       const s = this.#stateOf(c.id);
-      if (s.cooldownUntil > now || s.parkedUntil > now) return false;
+      if (this.#blockedUntil(s, options.scope) > now) return false;
       return c.rpmLimit === null || this.#requestsLastMinute(s, now) < c.rpmLimit;
     });
     if (ready.length === 0) {
       const waits = usable
-        .map((c) => {
-          const s = this.#stateOf(c.id);
-          return Math.max(s.cooldownUntil, s.parkedUntil);
-        })
+        .map((c) => this.#blockedUntil(this.#stateOf(c.id), options.scope))
         .filter((t) => t > now);
       return { error: "no_credential", retryAt: waits.length ? Math.min(...waits) : null };
     }
@@ -114,7 +123,7 @@ export class CredentialPool {
     }
     if (stickyId) this.#remember(stickyId, chosen.id, now + provider.stickyTtlMs);
 
-    return { lease: this.#lease(chosen, now) };
+    return { lease: this.#lease(chosen, now, options.scope) };
   }
 
   /** Credit tokens to a credential so `least_used` sees them. */
@@ -124,10 +133,26 @@ export class CredentialPool {
 
   /**
    * Takes a credential out of rotation until `until` (epoch ms) because its account is out of quota;
-   * `null` (or a time in the past) puts it back. Independent of the failure cooldown.
+   * `null` (or a time in the past) puts it back. With a `scope` only the models of that scope are
+   * affected. Independent of the failure cooldown.
    */
-  park(credentialId: string, until: number | null): void {
-    this.#stateOf(credentialId).parkedUntil = until !== null && until > this.#now() ? until : 0;
+  park(credentialId: string, until: number | null, scope?: string): void {
+    const value = until !== null && until > this.#now() ? until : 0;
+    const state = this.#stateOf(credentialId);
+    if (scope === undefined) state.parkedUntil = value;
+    else this.#scopeState(state, scope).parkedUntil = value;
+  }
+
+  /**
+   * Lifts the cooldown a 429 put on one scope, because the account's own report shows it is fine
+   * again. A quota park is not touched: the report that set it clears it.
+   */
+  healScope(credentialId: string, scope: string): void {
+    const own = this.#stateOf(credentialId).scopes.get(scope);
+    if (own) {
+      own.failCount = 0;
+      own.cooldownUntil = 0;
+    }
   }
 
   /** Live health for the admin API. */
@@ -145,7 +170,7 @@ export class CredentialPool {
     };
   }
 
-  #lease(credential: CredentialRuntime, now: number): Lease {
+  #lease(credential: CredentialRuntime, now: number, scope: ModelScope | undefined): Lease {
     const state = this.#stateOf(credential.id);
     state.inflight++;
     state.lastUsedAt = now;
@@ -157,20 +182,24 @@ export class CredentialPool {
       ok: () => {
         state.failCount = 0;
         state.cooldownUntil = 0;
+        if (scope) this.healScope(credential.id, scope.name);
       },
       fail: (kind, retryAfterMs) => {
         if (kind === "auth") {
           this.#registry.markDead(credential.id, "upstream rejected the credential (401)");
           return;
         }
-        state.failCount++;
+        // A scope's own cap must not take the account's other models out of rotation.
+        const target =
+          kind === "rate_limited" && scope?.local ? this.#scopeState(state, scope.name) : state;
+        target.failCount++;
         const { baseMs, maxMs } = BACKOFF[kind];
         // An explicit Retry-After wins over the computed backoff, but never parks a key beyond maxMs.
         const wait =
           retryAfterMs === undefined
-            ? Math.min(baseMs * 2 ** (state.failCount - 1), maxMs)
+            ? Math.min(baseMs * 2 ** (target.failCount - 1), maxMs)
             : Math.min(retryAfterMs, maxMs);
-        state.cooldownUntil = this.#now() + wait;
+        target.cooldownUntil = this.#now() + wait;
       },
       release: () => {
         if (released) return;
@@ -178,6 +207,21 @@ export class CredentialPool {
         state.inflight = Math.max(0, state.inflight - 1);
       },
     };
+  }
+
+  /** When the credential can next serve a model of `scope`: the latest of every cooldown and park that applies. */
+  #blockedUntil(s: CredentialState, scope: ModelScope | undefined): number {
+    const own = scope ? s.scopes.get(scope.name) : undefined;
+    return Math.max(s.cooldownUntil, s.parkedUntil, own?.cooldownUntil ?? 0, own?.parkedUntil ?? 0);
+  }
+
+  #scopeState(s: CredentialState, scope: string): ScopeState {
+    let own = s.scopes.get(scope);
+    if (!own) {
+      own = { failCount: 0, cooldownUntil: 0, parkedUntil: 0 };
+      s.scopes.set(scope, own);
+    }
+    return own;
   }
 
   #stateOf(id: string): CredentialState {
@@ -190,6 +234,7 @@ export class CredentialPool {
         parkedUntil: 0,
         lastUsedAt: 0,
         recent: [],
+        scopes: new Map(),
       };
       this.#state.set(id, s);
     }
