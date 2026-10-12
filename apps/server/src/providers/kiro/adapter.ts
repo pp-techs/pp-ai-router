@@ -47,7 +47,8 @@ function isConnectFailure(error: unknown): boolean {
       message.includes("name resolution") ||
       message.includes("failed to lookup address") ||
       message.includes("connection refused") ||
-      message.includes("failed to connect")
+      message.includes("failed to connect") ||
+      message.includes("connect error")
     )
       return true;
   }

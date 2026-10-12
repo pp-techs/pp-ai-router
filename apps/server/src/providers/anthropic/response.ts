@@ -38,17 +38,22 @@ const STOP_REASONS: Record<string, FinishReason> = {
   model_context_window_exceeded: "length",
   tool_use: "tool_calls",
   refusal: "content_filter",
+  content_filter: "content_filter",
 };
 
 const finishReason = (stop: unknown): FinishReason =>
   (typeof stop === "string" && STOP_REASONS[stop]) || "stop";
 
-/** Anthropic reports the four counters separately; OpenAI's `prompt_tokens` includes cache reads and writes. */
+/**
+ * Anthropic reports the counters separately; OpenAI's `prompt_tokens` includes cache reads and writes.
+ * `reasoning` is the thinking share of `output` (`output_tokens_details.thinking_tokens`), not extra.
+ */
 interface UsageCounters {
   input: number;
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  reasoning: number;
 }
 
 function mergeUsage(into: UsageCounters, raw: unknown): void {
@@ -58,6 +63,9 @@ function mergeUsage(into: UsageCounters, raw: unknown): void {
   into.output = take(raw.output_tokens, into.output);
   into.cacheRead = take(raw.cache_read_input_tokens, into.cacheRead);
   into.cacheWrite = take(raw.cache_creation_input_tokens, into.cacheWrite);
+  if (isRecord(raw.output_tokens_details)) {
+    into.reasoning = take(raw.output_tokens_details.thinking_tokens, into.reasoning);
+  }
 }
 
 const toOpenAiUsage = (u: UsageCounters): OpenAIUsage =>
@@ -66,14 +74,33 @@ const toOpenAiUsage = (u: UsageCounters): OpenAIUsage =>
     completion: u.output,
     cached: u.cacheRead,
     cacheWrite: u.cacheWrite,
+    // A reported subset of the output; a figure above the output is not one.
+    reasoning: u.reasoning <= u.output ? u.reasoning : 0,
   });
 
-const emptyUsage = (): UsageCounters => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+const emptyUsage = (): UsageCounters => ({
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  reasoning: 0,
+});
 
+/** Anthropic-compatible upstreams can forward `stop_reason: "error"`: a failed generation, never a stop. */
 function* finish(meta: ChunkMeta, stop: unknown, usage: UsageCounters): Generator<OpenAIChunk> {
+  if (stop === "error") throw new Error('Anthropic ended the turn with stop_reason "error"');
   yield chunk(meta, {}, finishReason(stop));
   yield usageChunk(meta, toOpenAiUsage(usage));
 }
+
+/**
+ * A tool_use id a client can echo back. A relay may send `""` or `"   "`, which would never pair with
+ * its result on the next turn, so blank counts as absent and an id is made up.
+ */
+const usableToolUseId = (id: unknown): string =>
+  typeof id === "string" && id.trim()
+    ? id
+    : `toolu_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
 
 /** SSE events of a streaming `/v1/messages` call -> OpenAI chunks (usage in the last chunk). */
 export async function* streamChunks(
@@ -126,7 +153,7 @@ export async function* streamChunks(
             tool_calls: [
               {
                 index: state.tool,
-                id: String(block.id),
+                id: usableToolUseId(block.id),
                 type: "function",
                 function: { name: String(block.name), arguments: "" },
               },
@@ -146,6 +173,9 @@ export async function* streamChunks(
         } else if (delta.type === "thinking_delta" && typeof delta.thinking === "string") {
           state.thinking += delta.thinking;
           if (delta.thinking) yield chunk(meta, { reasoning_content: delta.thinking });
+        } else if (delta.type === "reasoning_delta" && typeof delta.reasoning === "string") {
+          // Some Anthropic-compatible reasoning models name the thinking block `reasoning`.
+          if (delta.reasoning) yield chunk(meta, { reasoning_content: delta.reasoning });
         } else if (delta.type === "signature_delta" && typeof delta.signature === "string") {
           state.signature += delta.signature;
         } else if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") {
@@ -196,7 +226,8 @@ export async function* streamChunks(
     }
     if (done) break;
   }
-  if (!done) throw new Error("Anthropic stream ended before message_stop");
+  // Compatible providers may close the stream after `message_delta.stop_reason` without `message_stop`.
+  if (!done && stop === null) throw new Error("Anthropic stream ended before message_stop");
   yield* finish(meta, stop, usage);
 }
 
@@ -225,6 +256,8 @@ export function* messageChunks(
         };
         yield chunk(meta, { thinking_blocks: [thinking] } as AnthropicDelta);
       }
+    } else if (block.type === "reasoning" && typeof block.reasoning === "string") {
+      if (block.reasoning) yield chunk(meta, { reasoning_content: block.reasoning });
     } else if (block.type === "redacted_thinking" && typeof block.data === "string") {
       yield chunk(meta, {
         thinking_blocks: [{ type: "redacted_thinking", data: block.data }],
@@ -234,7 +267,7 @@ export function* messageChunks(
         tool_calls: [
           {
             index: tool++,
-            id: String(block.id),
+            id: usableToolUseId(block.id),
             type: "function",
             function: { name: String(block.name), arguments: JSON.stringify(block.input ?? {}) },
           },

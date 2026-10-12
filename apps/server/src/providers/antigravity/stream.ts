@@ -50,6 +50,8 @@ export class GeminiMapper {
   #finishReason: string | undefined;
   #usage: OpenAIUsage | undefined;
   #carriedSignature: string | undefined;
+  /** Whether any frame carried a candidate (a buffered answer without one is an error). */
+  sawCandidate = false;
 
   constructor(opts: {
     model: string;
@@ -100,6 +102,7 @@ export class GeminiMapper {
     const candidate: unknown = candidates[0];
     if (!isRecord(candidate))
       throw new Error("Antigravity response contained an invalid candidate");
+    this.sawCandidate = true;
 
     if (typeof candidate.finishReason === "string" && candidate.finishReason) {
       this.#finishReason = candidate.finishReason;
@@ -234,5 +237,7 @@ export async function* chunksFromJson(
     throw new Error("Antigravity response was not valid JSON");
   }
   yield* mapper.push(frame);
+  // A buffered answer is the whole turn: without a candidate it is no answer, not an empty one.
+  if (!mapper.sawCandidate) throw new Error("Antigravity response contained no candidates");
   yield* mapper.finish();
 }

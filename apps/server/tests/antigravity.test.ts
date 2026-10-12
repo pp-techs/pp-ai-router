@@ -5,7 +5,7 @@ import { OAuthRefreshError, type OAuthTokens } from "../src/oauth/types.ts";
 import { ADAPTERS } from "../src/providers/adapter.ts";
 import { createAntigravityAdapter } from "../src/providers/antigravity/adapter.ts";
 import { CLIENT_ID, CLIENT_SECRET, REDIRECT_URI } from "../src/providers/antigravity/constants.ts";
-import { resolveWireModel } from "../src/providers/antigravity/models.ts";
+import { ANTIGRAVITY_MODELS, resolveWireModel } from "../src/providers/antigravity/models.ts";
 import { createAntigravityOAuth, type LoginState } from "../src/providers/antigravity/oauth.ts";
 import { resetReplay } from "../src/providers/antigravity/replay.ts";
 import { buildRequest } from "../src/providers/antigravity/request.ts";
@@ -423,6 +423,21 @@ describe("model mapping", () => {
     });
     expect(resolveWireModel("gemini-3.1-pro-preview")).toEqual({ wireModelId: "gemini-pro-agent" });
     expect(resolveWireModel("some-new-model")).toEqual({ wireModelId: "some-new-model" });
+  });
+
+  it("publishes the context window and the modalities the wire can carry", () => {
+    const byId = new Map(ANTIGRAVITY_MODELS.map((m) => [m.id, m]));
+    expect(byId.get("gemini-3.8-flash")).toMatchObject({
+      contextWindow: 1_048_576,
+      inputModalities: ["text", "image"],
+      maxOutputTokens: 65536,
+    });
+    expect(byId.get("claude-sonnet-4-6")).toMatchObject({ contextWindow: 250_000 });
+    expect(byId.get("gpt-oss-120b-medium")).toMatchObject({
+      contextWindow: 131_072,
+      inputModalities: ["text"],
+    });
+    expect(ANTIGRAVITY_MODELS.every((m) => m.contextWindow && m.inputModalities)).toBe(true);
   });
 });
 
@@ -1149,6 +1164,91 @@ describe("adapter.call", () => {
     expect(res.status).toBe(400);
     expect((await readJson(res)).error.type).toBe("invalid_request_error");
     expect(google.generations()).toHaveLength(0);
+  });
+
+  it("replays a 400 that blames the tool schema or thinking config once, with those parts relaxed", async () => {
+    const { google, call } = setup();
+    google.state.validTokens.add("tok");
+    const tools = [
+      {
+        type: "function",
+        function: {
+          name: "lookup",
+          parameters: { type: "object", properties: { q: { type: "string" } } },
+        },
+      },
+    ];
+    google.state.generate.push(
+      Response.json(
+        {
+          error: {
+            code: 400,
+            message: "Invalid JSON payload: function_declarations[0].parameters",
+          },
+        },
+        { status: 400 },
+      ),
+    );
+    const ok = await call({
+      body: { model: "gemini-3.8-flash", messages: [{ role: "user", content: "hi" }], tools },
+    });
+    expect(ok.status).toBe(200);
+    const [first, second] = google.generations();
+    type Sent = {
+      request: {
+        tools?: { functionDeclarations: { parameters: unknown }[] }[];
+        generationConfig?: { thinkingConfig?: unknown };
+      };
+    };
+    const sent = (rec: { body: unknown } | undefined) => rec!.body as Sent;
+    const params = (rec: { body: unknown } | undefined) =>
+      sent(rec).request.tools![0]!.functionDeclarations[0]!.parameters;
+    expect(params(first)).toMatchObject({ properties: { q: { type: "string" } } });
+    expect(params(second)).toEqual({ type: "object", properties: {} });
+
+    google.state.generate.push(
+      Response.json(
+        { error: { code: 400, message: "thinking_level is not supported for this model" } },
+        { status: 400 },
+      ),
+    );
+    await call({
+      body: {
+        model: "gemini-3.8-flash",
+        messages: [{ role: "user", content: "hi" }],
+        reasoning_effort: "high",
+      },
+    });
+    const [, , thinkingFirst, thinkingSecond] = google.generations();
+    expect(sent(thinkingFirst).request.generationConfig?.thinkingConfig).toBeDefined();
+    expect(sent(thinkingSecond).request.generationConfig?.thinkingConfig).toBeUndefined();
+
+    // An unrelated 400 is final, and a repaired replay is not repaired again.
+    google.state.generate.push(
+      Response.json({ error: { code: 400, message: "bad things" } }, { status: 400 }),
+    );
+    expect((await call()).status).toBe(400);
+    expect(google.generations()).toHaveLength(5);
+    google.state.generate.push(
+      Response.json({ error: { code: 400, message: "thinking_level" } }, { status: 400 }),
+      Response.json({ error: { code: 400, message: "thinking_level" } }, { status: 400 }),
+    );
+    const stillBad = await call({
+      body: {
+        model: "gemini-3.8-flash",
+        messages: [{ role: "user", content: "hi" }],
+        reasoning_effort: "low",
+      },
+    });
+    expect(stillBad.status).toBe(400);
+    expect(google.generations()).toHaveLength(7);
+  });
+
+  it("fails a non-stream answer that carries no candidate", async () => {
+    const { google, call } = setup();
+    google.state.validTokens.add("tok");
+    google.state.generate.push(Response.json(frame({ usageMetadata: USAGE })));
+    await expect(call()).rejects.toThrow(/no candidates/);
   });
 
   it("refuses an account without a project and rejects a malformed upstream body", async () => {

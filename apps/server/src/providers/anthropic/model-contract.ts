@@ -10,18 +10,25 @@ type Version = readonly [major: number, minor: number];
 /**
  * Families that moved to adaptive thinking: they 400 on `thinking.type: "enabled"`, while older
  * families (Haiku 4.5, Sonnet 4.x, Opus <= 4.6) 400 on `adaptive`. Opus 4.6 / Sonnet 4.6 accept both.
+ * Haiku 5.5 requires adaptive (Haiku 5.5 migration guide, 2026-10-08).
  */
 const ADAPTIVE_THINKING_FROM: Record<string, Version> = {
   sonnet: [5, 0],
   opus: [4, 7],
   fable: [0, 0],
+  haiku: [5, 5],
 };
 
-/** Families that 400 on any non-default `temperature`, `top_p` or `top_k`. */
+/**
+ * Families that 400 on any non-default `temperature`, `top_p` or `top_k`, with or without thinking.
+ * Live 2026-09-29: Opus 4.7, 4.8, 5 and 5.5, Sonnet 5 and 5.5, Fable 5 and 5.1 reject them; Opus 4.6,
+ * Sonnet 4.6 and Haiku 4.5 accept them. Haiku 5.5 rejects them too (migration guide, 2026-10-08).
+ */
 const SAMPLING_REJECTED_FROM: Record<string, Version> = {
   sonnet: [5, 0],
   opus: [4, 7],
   fable: [0, 0],
+  haiku: [5, 5],
 };
 
 interface ClaudeVersion {
@@ -57,6 +64,40 @@ export const usesAdaptiveThinking = (modelId: string) => meets(modelId, ADAPTIVE
 
 export const rejectsSamplingParameters = (modelId: string) =>
   meets(modelId, SAMPLING_REJECTED_FROM);
+
+/**
+ * Sonnet 5.5 and later: `thinking.type` accepts only `adaptive` and `between_tools`. An explicit
+ * `disabled` 400s, so `between_tools` is the lowest setting a request can ask for (accepted at
+ * low..high effort, rejected at xhigh/max).
+ */
+export function usesBetweenToolsFloor(modelId: string): boolean {
+  const parsed = claudeFamilyVersion(modelId);
+  return parsed?.family === "sonnet" && atLeast(parsed, [5, 5]);
+}
+
+/**
+ * Families that think by default and accept an explicit `thinking: {type: "disabled"}` to turn it
+ * off: Sonnet 5 up to 5.4, Haiku 5.5+ (send no effort with it). Deliberately not
+ * `usesAdaptiveThinking`, which answers a different question (which wire shape a family accepts):
+ * Fable always thinks and rejects a disable, Opus 4.7/4.8 leave thinking off when it is omitted.
+ */
+export function supportsExplicitThinkingDisable(modelId: string): boolean {
+  const parsed = claudeFamilyVersion(modelId);
+  return (
+    (parsed?.family === "sonnet" && atLeast(parsed, [5, 0]) && !atLeast(parsed, [5, 5])) ||
+    (parsed?.family === "haiku" && atLeast(parsed, [5, 5]))
+  );
+}
+
+/**
+ * Families that reject both `thinking: disabled` and `thinking: between_tools` (live 2026-09-29):
+ * Opus 5.5 and every Fable. They think by default; a request cannot switch it off.
+ */
+export function hasNoThinkingOffSwitch(modelId: string): boolean {
+  const parsed = claudeFamilyVersion(modelId);
+  if (parsed?.family === "fable") return true;
+  return parsed?.family === "opus" && parsed.major === 5 && parsed.minor === 5;
+}
 
 /** 4.5/4.6 families accept `temperature` or `top_p` alone but 400 when both are sent. */
 export function rejectsCombinedSampling(modelId: string): boolean {

@@ -25,9 +25,16 @@ export interface LoginState {
   verifier: string;
 }
 
-/** Codes meaning the refresh token / client itself is no longer valid, as opposed to a passing outage. */
+/**
+ * Codes meaning the refresh token / client itself is no longer valid, as opposed to a passing outage:
+ * the reference's revocation codes plus the RFC 6749 client failures.
+ */
 const TERMINAL_TOKEN_ERRORS: Record<string, true> = {
   invalid_grant: true,
+  refresh_token_reused: true,
+  revoked: true,
+  revoked_token: true,
+  refresh_token_revoked: true,
   invalid_client: true,
   unauthorized_client: true,
 };
@@ -97,11 +104,15 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
         : undefined;
     const extra = { ...previous?.extra };
     if (uuid) extra[ACCOUNT_UUID_KEY] = uuid;
+    // A missing, negative, non-finite or overflowing lifetime would never compare as expired: use an hour.
+    const lifetimeSeconds =
+      typeof expiresIn === "number" && expiresIn >= 0 && Number.isFinite(expiresIn * 1000)
+        ? expiresIn
+        : 3600;
     return {
       accessToken,
       refreshToken: refresh,
-      expiresAt:
-        now() + (typeof expiresIn === "number" && expiresIn >= 0 ? expiresIn : 3600) * 1000,
+      expiresAt: now() + lifetimeSeconds * 1000,
       account: email ?? previous?.account ?? uuid,
       extra,
     };

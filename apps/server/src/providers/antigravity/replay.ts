@@ -72,8 +72,11 @@ export const usesReplayCache = (model: string): boolean => !/claude/i.test(model
 /**
  * Only the Gemini dialect requires (and accepts the bypass for) a signature on the first function
  * call. Deliberately not `usesReplayCache`: fabricating a Gemini token for `gpt-oss` is not harmless.
+ * Matched on the model component only (last `/` segment of a namespaced id), and `[-.\d]` after
+ * `gemini` keeps `geminibot` and `my-gemini-clone` out.
  */
-const supportsSentinel = (model: string): boolean => /^gemini[-.\d]/i.test(model);
+const supportsSentinel = (model: string): boolean =>
+  /^gemini[-.\d]/i.test(model.slice(model.lastIndexOf("/") + 1));
 
 function prune(now: number): void {
   for (const [key, session] of sessions) if (session.expiresAt <= now) sessions.delete(key);

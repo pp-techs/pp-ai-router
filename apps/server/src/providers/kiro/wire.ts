@@ -42,6 +42,20 @@ export function resolveApiRegion(meta: Readonly<Record<string, string>>): string
   );
 }
 
+/**
+ * Region of the usage (management) API: the profile ARN wins, because an enterprise profile can live
+ * in a different region from the one the account's runtime calls go to; then `apiRegion`, the SSO
+ * region and the default. Reads only the account's own ARN, never the Builder ID service profile.
+ */
+export function resolveUsageRegion(meta: Readonly<Record<string, string>>): string {
+  return (
+    regionFromProfileArn(meta.profileArn) ??
+    normalizeRegion(meta.apiRegion) ??
+    normalizeRegion(meta.ssoRegion) ??
+    DEFAULT_REGION
+  );
+}
+
 export type KiroWireClient = "ide" | "cli";
 
 export interface RequestIdentity {

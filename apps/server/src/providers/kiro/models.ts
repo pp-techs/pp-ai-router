@@ -2,12 +2,13 @@
 import type { ModelInfo } from "../adapter.ts";
 
 /**
- * Kiro has no discovery endpoint we can call per account, so this is a fixed list. Context windows
- * are the ones Kiro documents. Any other id still works as `kiro/<id>` (the router passes unknown
- * ids through); the reference also lists ids announced but not yet in Kiro's catalog (GPT-6 Sol/Luna,
- * GPT-6.1 Sol), which are deliberately left out here because requests for them fail upstream. Checked
- * against https://kiro.dev/docs/models/ (updated 2026-10-08). Claude Fable 5.1 (Enterprise-only
- * preview, us-east-1) is not listed either.
+ * The reference's model list is static too (its `ListAvailableModels` call only feeds per-account routing
+ * evidence, never the list), so this is a fixed list. Context windows are the ones Kiro documents. Any
+ * other id still works as `kiro/<id>` (the router passes unknown ids through). Like the reference, the
+ * list also carries ids announced ahead of Kiro's catalog (Claude Sonnet 5.5, Opus 5.5, Haiku 5.5):
+ * requests for them fail upstream until Kiro ships them. GPT-6 Sol/Luna and GPT-6.1 Sol, which the
+ * reference lists the same way, are left out. Checked against https://kiro.dev/docs/models/
+ * (updated 2026-10-08). Claude Fable 5.1 (Enterprise-only preview, us-east-1) is not listed either.
  */
 export const KIRO_MODELS: readonly ModelInfo[] = [
   { id: "kiro-auto" },
@@ -26,6 +27,7 @@ export const KIRO_MODELS: readonly ModelInfo[] = [
   { id: "claude-sonnet-4.5", contextWindow: 200_000 },
   { id: "claude-sonnet-4.0", contextWindow: 200_000 },
   { id: "claude-haiku-4.5", contextWindow: 200_000 },
+  { id: "claude-haiku-5.5", contextWindow: 1_000_000 },
   { id: "deepseek-3.2", contextWindow: 128_000 },
   { id: "minimax-m2.5", contextWindow: 200_000 },
   { id: "minimax-m2.1", contextWindow: 200_000 },

@@ -48,12 +48,40 @@ function payloadDetails(payloadText: string): string[] {
 
 const any = (text: string, needles: string[]) => needles.some((n) => text.includes(n));
 
+const QUOTA_MARKERS = [
+  "insufficient_quota",
+  "quota exhausted",
+  "quota exceeded",
+  "exceeded your current quota",
+];
+/** A per-minute/second ceiling is a rate limit even when worded as a quota. */
+const RATE_CEILING = /requests?\s+per\s+(?:min|minute|second)|\b(?:rpm|tpm)\b/;
+const SUSPENSION_MARKERS = [
+  "temporarily_suspended",
+  "temporarily suspended",
+  "temporarily is suspended",
+  "locked your account",
+  "locked it as a",
+];
+/** Auth failures definite enough to override a 400 status (AWS JSON APIs report expired tokens as 400). */
+const AUTH_MARKERS = [
+  "accessdenied",
+  "access denied",
+  "unauthorized",
+  "unrecognizedclient",
+  "expiredtoken",
+  "expired token",
+  "invalid token",
+];
+
+/** A spent allowance (the account's problem), as opposed to a rate ceiling. */
+const quotaSpent = (text: string) =>
+  text.includes("monthly_request_count") || (any(text, QUOTA_MARKERS) && !RATE_CEILING.test(text));
+
 /** Short class prefix, in the reference's precedence order. */
 function classPrefix(status: number | undefined, text: string): string {
-  if (
-    any(text, ["insufficient_quota", "quota exhausted", "quota exceeded", "monthly_request_count"])
-  )
-    return "Kiro quota exhausted";
+  if (quotaSpent(text)) return "Kiro quota exhausted";
+  if (status === 403 && any(text, SUSPENSION_MARKERS)) return "Kiro account suspended";
   if (status === 429 || any(text, ["throttlingexception", "too many requests", "rate limit"]))
     return "Kiro rate limit exceeded";
   if (
@@ -120,18 +148,15 @@ export function describeKiroFailure(
 
   const prefix = classPrefix(status, evidence);
   const message = detail ? `${prefix}: ${detail}` : prefix;
+  // A spent quota is the account's problem, not the request's: report 429 so the gateway rotates credentials.
+  if (quotaSpent(evidence)) return { status: 429, code: "insufficient_quota", message };
   if (
-    any(evidence, [
-      "monthly_request_count",
-      "insufficient_quota",
-      "quota exhausted",
-      "quota exceeded",
-    ])
+    fallbackStatus === 429 ||
+    any(evidence, ["throttlingexception", "too many requests", "rate limit"])
   )
-    // A spent quota is the account's problem, not the request's: report 429 so the gateway rotates credentials.
-    return { status: 429, code: "insufficient_quota", message };
-  if (fallbackStatus === 429 || any(evidence, ["throttlingexception", "too many requests"]))
     return { status: 429, code: "rate_limit_exceeded", message };
+  if (fallbackStatus === 400 && any(evidence, AUTH_MARKERS))
+    return { status: 401, code: "upstream_error", message };
   return { status: fallbackStatus, code: "upstream_error", message };
 }
 

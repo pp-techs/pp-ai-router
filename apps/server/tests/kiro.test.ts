@@ -381,6 +381,34 @@ describe("request building", () => {
     );
   });
 
+  it("prices an image by its pixel size when the header can be read", () => {
+    const png = Buffer.alloc(24);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+    png.write("IHDR", 12, "latin1");
+    png.writeUInt32BE(3000, 16);
+    png.writeUInt32BE(2000, 20);
+    const estimate = (bytes: string) =>
+      buildKiroRequest(
+        {
+          model: "m",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "look" },
+                { type: "image_url", image_url: { url: `data:image/png;base64,${bytes}` } },
+              ],
+            },
+          ],
+        },
+        CLI,
+      ).estimatedInputTokens;
+    // 3000 x 2000 px is 8000 tokens at one per 750 px; an unreadable header falls back to the 256 floor
+    expect(estimate(png.toString("base64"))).toBeGreaterThanOrEqual(8000);
+    expect(estimate(png.toString("base64"))).toBeLessThan(8100);
+    expect(estimate("AAAA")).toBeLessThan(400);
+  });
+
   it("keeps only the newest 20 images per message", () => {
     const part = (i: number) => ({
       type: "image_url",
@@ -1019,6 +1047,26 @@ describe("kiro adapter", () => {
       401,
     );
     expect((await respondWith(403, '{"message":"Denied"}')).res.status).toBe(403);
+
+    // AWS JSON APIs report an expired token as a 400; it is still an auth failure the gateway should refresh on
+    const expired = await respondWith(
+      400,
+      '{"__type":"ExpiredTokenException","message":"The security token is expired"}',
+    );
+    expect(expired.res.status).toBe(401);
+    expect(expired.json.error.message).toContain("Kiro authentication failed");
+
+    const suspended = await respondWith(
+      403,
+      '{"message":"Your account is temporarily suspended","reason":"TEMPORARILY_SUSPENDED"}',
+    );
+    expect(suspended.res.status).toBe(403);
+    expect(suspended.json.error.message).toContain("Kiro account suspended");
+
+    // a per-minute ceiling worded as a quota is a rate limit, not a spent allowance
+    const ceiling = await respondWith(429, '{"message":"quota exceeded: 5 requests per minute"}');
+    expect(ceiling.res.status).toBe(429);
+    expect(ceiling.json.error.code).toBe("rate_limit_exceeded");
 
     // spent monthly quota arrives as a 400 but is the account's problem: report 429 so the gateway rotates
     const quota = await respondWith(
