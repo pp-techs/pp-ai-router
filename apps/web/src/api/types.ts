@@ -138,6 +138,8 @@ export interface LimitInput {
   window: string;
   mode: LimitMode;
   max: number;
+  /** `*` glob over requested model names; null = every model of the key. */
+  model: string | null;
 }
 
 export interface Limit extends LimitInput {

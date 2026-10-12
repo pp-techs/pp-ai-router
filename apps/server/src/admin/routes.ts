@@ -101,6 +101,8 @@ const limitInput = z.strictObject({
   window: z.string().default("total"),
   mode: z.enum(["fixed", "rolling"]).default("fixed"),
   max: z.number().min(0),
+  /** `*` glob over requested model names; null = every model of the key. */
+  model: z.string().min(1).nullable().default(null),
 });
 const keyCreate = z.strictObject({
   name: z.string().min(1).max(100),
@@ -157,6 +159,7 @@ function parseLimit(input: z.infer<typeof limitInput>) {
       windowSec: parseWindow(input.window),
       mode: input.mode,
       max: input.max,
+      model: input.model,
     };
   } catch (error) {
     throw new HttpError(400, "invalid_request", (error as Error).message);
@@ -200,6 +203,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
       window: formatWindow(l.windowSec),
       mode: l.mode,
       max: l.max,
+      model: l.model,
       used: s.used,
       resets_at: s.resetsAt,
     };
@@ -849,7 +853,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
       status: "success",
       statusCode: 201,
       ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      details: { key_id: key.id, metric: limit.metric, max: limit.max },
+      details: { key_id: key.id, metric: limit.metric, max: limit.max, model: limit.model },
     });
     return c.json(limitView(limit), 201);
   });

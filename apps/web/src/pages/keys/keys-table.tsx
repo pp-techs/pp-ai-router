@@ -18,7 +18,7 @@ import { formatList } from "@/lib/input";
 import { METRIC_LABELS, usedFraction } from "@/lib/limits";
 
 const limitTitle = (limit: Limit) =>
-  `${METRIC_LABELS[limit.metric]} / ${limit.window} / ${limit.mode}`;
+  `${limit.model ?? "All models"} · ${METRIC_LABELS[limit.metric]} / ${limit.window} / ${limit.mode}`;
 
 function resetText(limit: Limit, now: number): string {
   if (limit.window === "total") return "lifetime total, never resets";

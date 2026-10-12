@@ -20,10 +20,12 @@ const limit = (keyId: string, over: Partial<Limit>): Limit => ({
   windowSec: 3600,
   mode: "fixed",
   max: 1,
+  model: null,
   ...over,
 });
 
-const spend = (usd: number, tokens = 0) => ({
+const spend = (usd: number, tokens = 0, model = "m") => ({
+  model,
   requests: 1,
   inputTokens: tokens,
   outputTokens: 0,
@@ -52,10 +54,10 @@ describe("UsageMeter", () => {
     meter.record(key.id, spend(0.6), t0);
     meter.record(key.id, spend(0.5), t0 + 60_000);
 
-    const blocked = meter.firstExceeded([l], t0 + 2 * 60_000);
+    const blocked = meter.firstExceeded([l], t0 + 2 * 60_000, "m");
     expect(blocked?.used).toBeCloseTo(1.1);
     expect(blocked?.resetsAt).toBe(11 * HOUR);
-    expect(meter.firstExceeded([l], 11 * HOUR)).toBeNull();
+    expect(meter.firstExceeded([l], 11 * HOUR, "m")).toBeNull();
   });
 
   it("rolling window ages usage out gradually instead of resetting at once", () => {
@@ -65,20 +67,24 @@ describe("UsageMeter", () => {
     meter.record(key.id, spend(0.7), t0);
     meter.record(key.id, spend(0.7), t0 + 30 * 60_000);
 
-    expect(meter.firstExceeded([l], t0 + 31 * 60_000)).not.toBeNull();
+    expect(meter.firstExceeded([l], t0 + 31 * 60_000, "m")).not.toBeNull();
     // First spend has aged out (one-minute bucket granularity), second still counts.
     const later = meter.status(l, t0 + 62 * 60_000);
     expect(later.used).toBeCloseTo(0.7);
     expect(later.resetsAt).toBeNull();
-    expect(meter.firstExceeded([l], t0 + 62 * 60_000)).toBeNull();
+    expect(meter.firstExceeded([l], t0 + 62 * 60_000, "m")).toBeNull();
   });
 
   it("supports every metric and a lifetime total", () => {
     const { meter, key } = setup();
-    meter.record(key.id, { requests: 1, inputTokens: 100, outputTokens: 50, costUsd: 0.01 }, 0);
     meter.record(
       key.id,
-      { requests: 1, inputTokens: 10, outputTokens: 5, costUsd: 0.01 },
+      { model: "m", requests: 1, inputTokens: 100, outputTokens: 50, costUsd: 0.01 },
+      0,
+    );
+    meter.record(
+      key.id,
+      { model: "m", requests: 1, inputTokens: 10, outputTokens: 5, costUsd: 0.01 },
       40 * DAY,
     );
     const at = 40 * DAY + 1000;
@@ -103,5 +109,35 @@ describe("UsageMeter", () => {
     const other = new VirtualKeyStore(db).create({ name: "o" }, 0).key;
     meter.record(other.id, spend(5), 1000);
     expect(meter.status(limit(key.id, { windowSec: null }), 2000).used).toBe(0);
+  });
+
+  it("scopes a limit to the models its glob matches, both for usage and for admission", () => {
+    const { meter, key } = setup();
+    meter.record(key.id, spend(0.6, 0, "openai/gpt-4o"), 1000);
+    meter.record(key.id, spend(0.6, 0, "openai/gpt-4o-mini"), 1000);
+    meter.record(key.id, spend(3, 0, "anthropic/claude"), 1000);
+
+    const exact = limit(key.id, { windowSec: null, model: "openai/gpt-4o" });
+    const glob = limit(key.id, { windowSec: null, model: "openai/*" });
+    expect(meter.status(exact, 2000).used).toBeCloseTo(0.6);
+    expect(meter.status(glob, 2000).used).toBeCloseTo(1.2);
+    expect(meter.status(limit(key.id, { windowSec: null }), 2000).used).toBeCloseTo(4.2);
+
+    // A model limit only gates requests for models it covers.
+    expect(meter.firstExceeded([glob], 2000, "openai/gpt-4o")).not.toBeNull();
+    expect(meter.firstExceeded([glob], 2000, "anthropic/claude")).toBeNull();
+    expect(meter.firstExceeded([exact], 2000, "openai/gpt-4o-mini")).toBeNull();
+    // `.` and other regex characters in a pattern are literal.
+    expect(
+      meter.status(limit(key.id, { windowSec: null, model: "openai/gpt-4o." }), 2000).used,
+    ).toBe(0);
+  });
+
+  it("keeps model limits windowed like key limits", () => {
+    const { meter, key } = setup();
+    meter.record(key.id, spend(1, 0, "a"), 10 * HOUR);
+    const l = limit(key.id, { windowSec: 3600, mode: "fixed", model: "a", max: 1 });
+    expect(meter.firstExceeded([l], 10 * HOUR + 1000, "a")?.resetsAt).toBe(11 * HOUR);
+    expect(meter.firstExceeded([l], 11 * HOUR, "a")).toBeNull();
   });
 });
