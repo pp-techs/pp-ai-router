@@ -7,34 +7,37 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 
-type Props = { created: CreatedKey };
+type Props = { created: CreatedKey; rotated?: boolean };
 
 /** The plaintext key exists only in this response; the server keeps just its hash. */
-export const CreatedKeyModal = createModal<Props, void>("created-key", ({ created, modal }) => (
-  <ModalDialog
-    modal={modal}
-    dismissed={undefined}
-    title={`Key "${created.name}" created`}
-    persistent
-  >
-    <Alert>
-      <TriangleAlertIcon />
-      <AlertDescription>
-        Copy this key now. It is shown only once and cannot be recovered later.
-      </AlertDescription>
-    </Alert>
-    <div className="flex items-start gap-2 rounded-lg border border-border bg-muted p-3">
-      <code className="min-w-0 flex-1 font-mono text-xs break-all select-all">{created.key}</code>
-      <CopyButton text={created.key} />
-    </div>
-    <p className="text-muted-foreground">
-      Use it as the API key of any OpenAI-compatible client with base URL{" "}
-      <code className="font-mono text-xs">{window.location.origin}/v1</code>.
-    </p>
-    <DialogFooter>
-      <Button autoFocus onClick={() => modal.resolve(undefined)}>
-        I have copied the key
-      </Button>
-    </DialogFooter>
-  </ModalDialog>
-));
+export const CreatedKeyModal = createModal<Props, void>(
+  "created-key",
+  ({ created, rotated, modal }) => (
+    <ModalDialog
+      modal={modal}
+      dismissed={undefined}
+      title={`Key "${created.name}" ${rotated ? "rotated" : "created"}`}
+      persistent
+    >
+      <Alert>
+        <TriangleAlertIcon />
+        <AlertDescription>
+          Copy this key now. It is shown only once and cannot be recovered later.
+        </AlertDescription>
+      </Alert>
+      <div className="flex items-start gap-2 rounded-lg border border-border bg-muted p-3">
+        <code className="min-w-0 flex-1 font-mono text-xs break-all select-all">{created.key}</code>
+        <CopyButton text={created.key} />
+      </div>
+      <p className="text-muted-foreground">
+        Use it as the API key of any OpenAI-compatible client with base URL{" "}
+        <code className="font-mono text-xs">{window.location.origin}/v1</code>.
+      </p>
+      <DialogFooter>
+        <Button autoFocus onClick={() => modal.resolve(undefined)}>
+          I have copied the key
+        </Button>
+      </DialogFooter>
+    </ModalDialog>
+  ),
+);

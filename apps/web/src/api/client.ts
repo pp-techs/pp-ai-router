@@ -107,6 +107,7 @@ export const api = {
   createKey: (body: KeyCreate) => request<CreatedKey>("POST", "/admin/keys", { body }),
   updateKey: (keyId: string, body: KeyPatch) =>
     request<VirtualKey>("PATCH", `/admin/keys/${id(keyId)}`, { body }),
+  rotateKey: (keyId: string) => request<CreatedKey>("POST", `/admin/keys/${id(keyId)}/rotate`),
   deleteKey: (keyId: string) => request<void>("DELETE", `/admin/keys/${id(keyId)}`),
   addLimit: (keyId: string, body: LimitInput) =>
     request<Limit>("POST", `/admin/keys/${id(keyId)}/limits`, { body }),

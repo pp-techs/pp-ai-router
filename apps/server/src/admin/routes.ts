@@ -821,6 +821,22 @@ export function createAdminApp(deps: AdminDeps): Hono {
     return c.json(keyView(key));
   });
 
+  app.post("/keys/:id/rotate", (c) => {
+    const rotated = keys.rotate(c.req.param("id"));
+    if (!rotated) throw notFound("Key");
+    audit?.record({
+      category: "admin",
+      action: "key.rotate",
+      actor: "admin",
+      targetType: "key",
+      targetId: rotated.key.id,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+    });
+    return c.json({ ...keyView(rotated.key), key: rotated.plaintext });
+  });
+
   app.delete("/keys/:id", (c) => {
     if (!keys.delete(c.req.param("id"))) throw notFound("Key");
     audit?.record({

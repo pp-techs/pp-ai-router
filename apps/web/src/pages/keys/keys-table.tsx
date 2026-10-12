@@ -1,4 +1,12 @@
-import { MinusCircleIcon, PlusIcon, PowerIcon, PowerOffIcon, Trash2Icon } from "lucide-react";
+import {
+  MinusCircleIcon,
+  PencilIcon,
+  PlusIcon,
+  PowerIcon,
+  PowerOffIcon,
+  RotateCwIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
 import type { Limit, VirtualKey } from "@/api/types";
@@ -48,11 +56,15 @@ function LimitMeter({ limit, now }: { limit: Limit; now: number }) {
 function KeyRow({
   apiKey,
   now,
+  onEdit,
+  onRotate,
   onAddLimit,
   onDelete,
 }: {
   apiKey: VirtualKey;
   now: number;
+  onEdit: () => void;
+  onRotate: () => void;
   onAddLimit: () => void;
   onDelete: () => void;
 }) {
@@ -118,6 +130,8 @@ function KeyRow({
           label={`Actions for ${apiKey.name}`}
           groups={[
             [
+              { label: "Edit", icon: PencilIcon, onSelect: onEdit },
+              { label: "Rotate key", icon: RotateCwIcon, onSelect: onRotate },
               { label: "Add limit", icon: PlusIcon, onSelect: onAddLimit },
               apiKey.limits.length > 0 && {
                 label: "Remove limit",
@@ -145,10 +159,14 @@ function KeyRow({
 
 export function KeysTable({
   keys,
+  onEdit,
+  onRotate,
   onAddLimit,
   onDelete,
 }: {
   keys: VirtualKey[];
+  onEdit: (key: VirtualKey) => void;
+  onRotate: (key: VirtualKey) => void;
   onAddLimit: (key: VirtualKey) => void;
   onDelete: (key: VirtualKey) => void;
 }) {
@@ -174,6 +192,8 @@ export function KeysTable({
             key={k.id}
             apiKey={k}
             now={now}
+            onEdit={() => onEdit(k)}
+            onRotate={() => onRotate(k)}
             onAddLimit={() => onAddLimit(k)}
             onDelete={() => onDelete(k)}
           />
