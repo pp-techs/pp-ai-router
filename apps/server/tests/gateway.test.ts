@@ -155,6 +155,22 @@ describe("request lifecycle", () => {
     expect((await h.chat(disabled.secret, { model: "acme/m" })).status).toBe(401);
   });
 
+  it("rotates a key's secret in place, keeping its id and limits", async () => {
+    const up = await upstream(() => completion());
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k1"]);
+    const key = await h.newKey({ limits: [{ metric: "requests", window: "total", max: 5 }] });
+
+    const rotated = await h.admin("POST", `/keys/${key.id}/rotate`);
+    expect(rotated.status).toBe(200);
+    expect(rotated.json).toMatchObject({ id: key.id, limits: [{ metric: "requests", max: 5 }] });
+    expect(rotated.json.key).not.toBe(key.secret);
+
+    expect((await h.chat(key.secret, { model: "acme/m" })).status).toBe(401);
+    expect((await h.chat(rotated.json.key, { model: "acme/m" })).status).toBe(200);
+    expect((await h.admin("POST", "/keys/ghost/rotate")).status).toBe(404);
+  });
+
   it("passes an upstream 4xx through without penalising the credential", async () => {
     const up = await upstream((_c, n) =>
       n === 1 ? Response.json({ error: { message: "bad param" } }, { status: 400 }) : completion(),

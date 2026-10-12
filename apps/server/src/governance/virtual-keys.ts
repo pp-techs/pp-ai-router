@@ -118,6 +118,15 @@ export class VirtualKeyStore {
     return this.get(id);
   }
 
+  /** Replaces the secret in place (id, limits, usage history stay); the old secret stops working at once. */
+  rotate(id: string): { key: VirtualKey; plaintext: string } | undefined {
+    const { plaintext, hash, prefix } = generateVirtualKey();
+    const changed = this.#db
+      .prepare("UPDATE virtual_keys SET key_hash = ?, key_prefix = ? WHERE id = ?")
+      .run(hash, prefix, id).changes;
+    return changed > 0 ? { key: this.get(id)!, plaintext } : undefined;
+  }
+
   delete(id: string): boolean {
     return this.#db.prepare("DELETE FROM virtual_keys WHERE id = ?").run(id).changes > 0;
   }
