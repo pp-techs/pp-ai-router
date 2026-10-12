@@ -1,5 +1,12 @@
 # server
 
+## 0.10.0
+
+### Minor Changes
+
+- 2bb1d0b: Per-model limits on API keys. A limit may carry a `model` glob (e.g. `openai/gpt-4o`, `claude-*`; null = every model) matched against the requested model: it only gates requests for matching models and counts only their usage, for any metric (USD, input/output/total tokens, requests) and window. Per-model usage is tracked in `usage_model_buckets` and seeded from the ledger on upgrade. The admin API and the 429 `limit_exceeded` error report the limit's `model`; the keys page can set it.
+- 38964b7: API keys can be rotated and edited from the Keys page. `POST /admin/keys/:id/rotate` issues a new secret for the same key (id, limits and usage history are kept; the old secret stops working at once, the new one is shown once). A new Edit dialog changes a key's name, allowed models and expiry.
+
 ## 0.9.0
 
 ### Minor Changes

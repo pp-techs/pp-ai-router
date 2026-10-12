@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.10.0] — 2026-10-12
+
+Per-model limits on API keys. A limit may carry a `model` glob (e.g. `openai/gpt-4o`, `claude-*`; null = every model) matched against the requested model: it only gates requests for matching models and counts only their usage, for any metric (USD, input/output/total tokens, requests) and window. Per-model usage is tracked in `usage_model_buckets` and seeded from the ledger on upgrade. The admin API and the 429 `limit_exceeded` error report the limit's `model`; the keys page can set it.
+
+API keys can be rotated and edited from the Keys page. `POST /admin/keys/:id/rotate` issues a new secret for the same key (id, limits and usage history are kept; the old secret stops working at once, the new one is shown once). A new Edit dialog changes a key's name, allowed models and expiry.
+
 ## [0.9.0] — 2026-10-12
 
 Subscription/OAuth providers synced with opencodex v2.83.0. Anthropic and Anthropic Subscription: Haiku 5.5 / Sonnet 5.5 model contracts, thinking-off handling per model, `response_format: json_schema` as `output_config.format`, `reasoning_tokens`, `refusal`/`error` stop reasons, more terminal refresh errors. Antigravity: one replay of a 400 that blames tool schemas or thinking config, model context windows and input modalities. Kiro: usage probe region from the profile ARN, per-minute rate limits no longer treated as spent quota, 400 expired-token mapped to 401, image token estimate from dimensions.
