@@ -73,6 +73,7 @@ export class Accounting {
       this.#meter.record(
         r.keyId,
         {
+          model: r.model,
           requests: 1,
           inputTokens: r.usage.promptTokens,
           outputTokens: r.usage.completionTokens,

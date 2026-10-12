@@ -18,6 +18,8 @@ export interface LimitDraft {
   window: string;
   mode: LimitMode;
   max: string;
+  /** Model glob; blank = every model. */
+  model: string;
 }
 
 export const emptyLimitDraft = (): LimitDraft => ({
@@ -25,6 +27,7 @@ export const emptyLimitDraft = (): LimitDraft => ({
   window: "1d",
   mode: "fixed",
   max: "",
+  model: "",
 });
 
 /** Mirrors the server's `parseWindow`: "total", or <n><m|h|d|w>, at least a minute, whole hours above a day. */
@@ -50,7 +53,17 @@ export function validateLimit(draft: LimitDraft): LimitResult {
     return { ok: false, error: "Enter a maximum of 0 or more." };
   if (draft.metric !== "usd" && !Number.isInteger(max))
     return { ok: false, error: "Token and request limits must be whole numbers." };
-  return { ok: true, limit: { metric: draft.metric, window, mode: draft.mode, max } };
+  const model = draft.model.trim();
+  return {
+    ok: true,
+    limit: {
+      metric: draft.metric,
+      window,
+      mode: draft.mode,
+      max,
+      model: model === "" ? null : model,
+    },
+  };
 }
 
 /** Fraction of a limit consumed, clamped to [0, 1]; an exhausted zero limit counts as full. */

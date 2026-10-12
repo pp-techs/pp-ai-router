@@ -485,6 +485,37 @@ describe("budgets", () => {
     expect((await h.chat(tokenKey.secret, { model: "ghost/x" })).status).toBe(429); // limits apply before routing
   });
 
+  it("applies a model-scoped limit only to the models it covers and reports its scope", async () => {
+    const up = await upstream(() => completion({ prompt_tokens: 100, completion_tokens: 50 }));
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k1"]);
+    const key = await h.newKey({
+      limits: [
+        { metric: "requests", window: "total", max: 1, model: "acme/capped" },
+        { metric: "requests", window: "total", max: 3 },
+      ],
+    });
+
+    expect((await h.chat(key.secret, { model: "acme/capped" })).status).toBe(200);
+    const blocked = await h.chat(key.secret, { model: "acme/capped" });
+    expect(blocked.status).toBe(429);
+    expect((await readJson(blocked)).error.limit).toMatchObject({
+      model: "acme/capped",
+      max: 1,
+      used: 1,
+    });
+    // Other models are untouched by the model limit but still share the key-wide one.
+    expect((await h.chat(key.secret, { model: "acme/free" })).status).toBe(200);
+    expect((await h.chat(key.secret, { model: "acme/free" })).status).toBe(200);
+    expect((await h.chat(key.secret, { model: "acme/free" })).status).toBe(429);
+
+    const view = (await h.admin("GET", `/keys/${key.id}`)).json;
+    const usedBy = (model: string | null) =>
+      view.limits.find((l: { model: string | null }) => l.model === model).used;
+    expect(usedBy("acme/capped")).toBe(1);
+    expect(usedBy(null)).toBe(3);
+  });
+
   it("exposes live usage against each limit in the admin API", async () => {
     const up = await upstream(() => completion());
     const h = createHarness();

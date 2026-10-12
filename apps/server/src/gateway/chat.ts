@@ -122,19 +122,24 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
         `This API key may not use model "${requestedModel}".`,
       );
     }
-    const exceeded = deps.meter.firstExceeded(listLimits(deps.db, key.id), startedAt);
+    const exceeded = deps.meter.firstExceeded(
+      listLimits(deps.db, key.id),
+      startedAt,
+      requestedModel,
+    );
     if (exceeded) {
       const { limit, used, resetsAt } = exceeded;
       throw new HttpError(
         429,
         "limit_exceeded",
-        `Key limit reached: ${limit.metric} ${used} / ${limit.max} per ${formatWindow(limit.windowSec)}.`,
+        `Key limit reached: ${limit.metric} ${used} / ${limit.max} per ${formatWindow(limit.windowSec)}${limit.model === null ? "" : ` for ${limit.model}`}.`,
         {
           limit: {
             id: limit.id,
             metric: limit.metric,
             window: formatWindow(limit.windowSec),
             mode: limit.mode,
+            model: limit.model,
             max: limit.max,
             used,
           },

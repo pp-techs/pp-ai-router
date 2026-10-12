@@ -24,7 +24,7 @@ const MODE_OPTIONS = [
   { value: "rolling", label: "Rolling" },
 ];
 
-/** One limit: metric x window x mode x max. The window is a preset or free text such as "90m" or "2w". */
+/** One limit: model x metric x window x mode x max. The window is a preset or free text such as "90m" or "2w". */
 export function LimitFields({
   draft,
   onChange,
@@ -66,6 +66,17 @@ export function LimitFields({
           placeholder={draft.metric === "usd" ? "5.00" : "100000"}
           value={draft.max}
           onChange={(e) => onChange({ max: e.target.value })}
+        />
+      </FormField>
+      <FormField
+        label="Model"
+        hint="Glob matched against the requested model, e.g. gpt-4o or claude-*. Blank = every model."
+        className="col-span-2 sm:col-span-4"
+      >
+        <Input
+          value={draft.model}
+          placeholder="any model"
+          onChange={(e) => onChange({ model: e.target.value })}
         />
       </FormField>
       {custom && (

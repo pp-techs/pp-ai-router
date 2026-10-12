@@ -22,7 +22,18 @@ describe("validateLimit", () => {
   it("builds the request body from a valid draft", () => {
     expect(validateLimit({ ...draft, window: " 1h ", mode: "rolling", max: "2.5" })).toEqual({
       ok: true,
-      limit: { metric: "usd", window: "1h", mode: "rolling", max: 2.5 },
+      limit: { metric: "usd", window: "1h", mode: "rolling", max: 2.5, model: null },
+    });
+  });
+
+  it("scopes the limit to a trimmed model glob, blank meaning every model", () => {
+    expect(validateLimit({ ...draft, model: " openai/* " })).toMatchObject({
+      ok: true,
+      limit: { model: "openai/*" },
+    });
+    expect(validateLimit({ ...draft, model: "  " })).toMatchObject({
+      ok: true,
+      limit: { model: null },
     });
   });
 

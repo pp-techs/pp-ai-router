@@ -19,7 +19,7 @@ Not persisted: pool health/cooldowns and quota parking, cached quota readings, s
 
 ## Accounting and limits
 
-`Accounting.record` runs in one transaction: ledger row (`usage_events`), bump of the key's buckets, and the pool's balancing counters. Cost = `computeCost(price, usage)` (cached/reasoning tokens, long-context tiers); no price -> $0 with `price_source=unknown`. `UsageMeter` evaluates limits (`metric` x `window` x `mode` fixed/rolling) from buckets; rolling windows include the partially aged oldest bucket, so they err towards blocking.
+`Accounting.record` runs in one transaction: ledger row (`usage_events`), bump of the key's buckets (`usage_buckets` key-wide, `usage_model_buckets` per requested model), and the pool's balancing counters. Cost = `computeCost(price, usage)` (cached/reasoning tokens, long-context tiers); no price -> $0 with `price_source=unknown`. `UsageMeter` evaluates limits (`model` glob x `metric` x `window` x `mode` fixed/rolling) from buckets; a model-scoped limit sums only the models its glob matches and only gates requests for them. Rolling windows include the partially aged oldest bucket, so they err towards blocking.
 
 ## Pricing
 

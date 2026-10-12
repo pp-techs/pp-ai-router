@@ -1,5 +1,6 @@
 import type { StatementSync } from "node:sqlite";
 import { all, one, transaction, type Db } from "../db/database.ts";
+import { globToRegExp } from "../glob.ts";
 
 export const METRICS = [
   "usd",
@@ -19,9 +20,13 @@ export interface Limit {
   windowSec: number | null;
   mode: LimitMode;
   max: number;
+  /** `*` glob over the requested model name the limit governs; null = every model of the key. */
+  model: string | null;
 }
 
 export interface UsageDelta {
+  /** Model name as requested by the client; keys the per-model buckets. */
+  model: string;
   requests: number;
   inputTokens: number;
   outputTokens: number;
@@ -74,6 +79,8 @@ interface SumRow {
   cost_usd: number;
 }
 
+const emptySum = (): SumRow => ({ requests: 0, input_tokens: 0, output_tokens: 0, cost_usd: 0 });
+
 function pick(row: SumRow, metric: Metric): number {
   switch (metric) {
     case "usd":
@@ -97,7 +104,9 @@ function pick(row: SumRow, metric: Metric): number {
 export class UsageMeter {
   readonly #db: Db;
   readonly #sum: StatementSync;
+  readonly #sumByModel: StatementSync;
   readonly #upsert: StatementSync;
+  readonly #upsertModel: StatementSync;
 
   constructor(db: Db) {
     this.#db = db;
@@ -106,10 +115,23 @@ export class UsageMeter {
               COALESCE(SUM(output_tokens), 0) AS output_tokens, COALESCE(SUM(cost_usd), 0) AS cost_usd
          FROM usage_buckets WHERE key_id = ? AND granularity = ? AND bucket_start >= ?`,
     );
+    this.#sumByModel = db.prepare(
+      `SELECT model, SUM(requests) AS requests, SUM(input_tokens) AS input_tokens,
+              SUM(output_tokens) AS output_tokens, SUM(cost_usd) AS cost_usd
+         FROM usage_model_buckets WHERE key_id = ? AND granularity = ? AND bucket_start >= ?
+        GROUP BY model`,
+    );
     this.#upsert = db.prepare(
       `INSERT INTO usage_buckets (key_id, granularity, bucket_start, requests, input_tokens, output_tokens, cost_usd)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(key_id, granularity, bucket_start) DO UPDATE SET
+         requests = requests + excluded.requests, input_tokens = input_tokens + excluded.input_tokens,
+         output_tokens = output_tokens + excluded.output_tokens, cost_usd = cost_usd + excluded.cost_usd`,
+    );
+    this.#upsertModel = db.prepare(
+      `INSERT INTO usage_model_buckets (key_id, granularity, bucket_start, model, requests, input_tokens, output_tokens, cost_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(key_id, granularity, bucket_start, model) DO UPDATE SET
          requests = requests + excluded.requests, input_tokens = input_tokens + excluded.input_tokens,
          output_tokens = output_tokens + excluded.output_tokens, cost_usd = cost_usd + excluded.cost_usd`,
     );
@@ -119,15 +141,15 @@ export class UsageMeter {
     const nowSec = Math.floor(nowMs / 1000);
     const write = () => {
       for (const g of [60, 3600]) {
-        this.#upsert.run(
-          keyId,
-          g,
-          Math.floor(nowSec / g) * g,
+        const bucket = Math.floor(nowSec / g) * g;
+        const amounts = [
           delta.requests,
           delta.inputTokens,
           delta.outputTokens,
           delta.costUsd,
-        );
+        ] as const;
+        this.#upsert.run(keyId, g, bucket, ...amounts);
+        this.#upsertModel.run(keyId, g, bucket, delta.model, ...amounts);
       }
     };
     // `record` may run inside the caller's transaction (accounting) or alone.
@@ -149,18 +171,31 @@ export class UsageMeter {
         from = Math.floor((nowSec - limit.windowSec) / g) * g;
       }
     }
-    const row = one<SumRow>(this.#sum, limit.keyId, g, from) ?? {
-      requests: 0,
-      input_tokens: 0,
-      output_tokens: 0,
-      cost_usd: 0,
-    };
+    const row =
+      limit.model === null
+        ? (one<SumRow>(this.#sum, limit.keyId, g, from) ?? emptySum())
+        : this.#sumModels(limit.keyId, limit.model, g, from);
     return { limit, used: pick(row, limit.metric), resetsAt };
   }
 
-  /** First exhausted limit, or null when the key may proceed. */
-  firstExceeded(limits: readonly Limit[], nowMs: number): LimitStatus | null {
+  /** Usage of every model matching `pattern`: grouped in SQL, matched with the same glob as `allowed_models`. */
+  #sumModels(keyId: string, pattern: string, g: number, from: number): SumRow {
+    const matches = globToRegExp(pattern);
+    const total = emptySum();
+    for (const row of all<SumRow & { model: string }>(this.#sumByModel, keyId, g, from)) {
+      if (!matches.test(row.model)) continue;
+      total.requests += row.requests;
+      total.input_tokens += row.input_tokens;
+      total.output_tokens += row.output_tokens;
+      total.cost_usd += row.cost_usd;
+    }
+    return total;
+  }
+
+  /** First exhausted limit that governs `model`, or null when the request may proceed. */
+  firstExceeded(limits: readonly Limit[], nowMs: number, model: string): LimitStatus | null {
     for (const limit of limits) {
+      if (limit.model !== null && !globToRegExp(limit.model).test(model)) continue;
       const s = this.status(limit, nowMs);
       if (s.used >= limit.max) return s;
     }
@@ -175,6 +210,7 @@ interface LimitRow {
   window_sec: number | null;
   mode: LimitMode;
   max_value: number;
+  model: string | null;
 }
 
 export const toLimit = (r: LimitRow): Limit => ({
@@ -184,6 +220,7 @@ export const toLimit = (r: LimitRow): Limit => ({
   windowSec: r.window_sec,
   mode: r.mode,
   max: r.max_value,
+  model: r.model,
 });
 
 export function listLimits(db: Db, keyId: string): Limit[] {

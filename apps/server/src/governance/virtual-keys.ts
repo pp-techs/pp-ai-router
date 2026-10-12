@@ -45,6 +45,8 @@ export interface NewLimit {
   windowSec: number | null;
   mode: LimitMode;
   max: number;
+  /** `*` glob over requested model names; null = the whole key. */
+  model: string | null;
 }
 
 export class VirtualKeyStore {
@@ -135,9 +137,9 @@ export class VirtualKeyStore {
     const id = randomUUID();
     this.#db
       .prepare(
-        "INSERT INTO limits (id, key_id, metric, window_sec, mode, max_value, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO limits (id, key_id, metric, window_sec, mode, max_value, model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       )
-      .run(id, keyId, input.metric, input.windowSec, input.mode, input.max, now);
+      .run(id, keyId, input.metric, input.windowSec, input.mode, input.max, input.model, now);
     return toLimit(one(this.#db.prepare("SELECT * FROM limits WHERE id = ?"), id)!);
   }
 
