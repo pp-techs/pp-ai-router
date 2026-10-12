@@ -4,11 +4,15 @@
  * https://platform.claude.com/docs/en/api/messages/create
  */
 import { isRecord, str } from "./json.ts";
+import { normalizeOutputSchema } from "./output-schema.ts";
 import {
+  hasNoThinkingOffSwitch,
   rejectsCombinedSampling,
   rejectsForcedToolChoice,
   rejectsSamplingParameters,
+  supportsExplicitThinkingDisable,
   usesAdaptiveThinking,
+  usesBetweenToolsFloor,
 } from "./model-contract.ts";
 
 type Json = Record<string, unknown>;
@@ -252,10 +256,15 @@ function toTools(tools: unknown): Block[] | undefined {
   });
 }
 
-function toToolChoice(body: Json, model: string): Json | undefined {
+/**
+ * `tool_choice` plus, when a forced choice had to be downgraded, the one tool it named: a model that
+ * refuses forced tool use gets `auto`, but the caller's narrowing to that tool must survive.
+ */
+function toToolChoice(body: Json, model: string): { choice?: Json; only?: string } {
   const choice = body.tool_choice;
   let out: Json | undefined;
-  if (choice === "none") return { type: "none" };
+  let only: string | undefined;
+  if (choice === "none") return { choice: { type: "none" } };
   if (choice === "auto") out = { type: "auto" };
   else if (choice === "required") out = { type: "any" };
   else if (
@@ -265,10 +274,13 @@ function toToolChoice(body: Json, model: string): Json | undefined {
   ) {
     out = { type: "tool", name: choice.function.name };
   }
-  if (out && rejectsForcedToolChoice(model) && out.type !== "auto") out = { type: "auto" };
+  if (out && rejectsForcedToolChoice(model) && out.type !== "auto") {
+    if (out.type === "tool") only = out.name as string;
+    out = { type: "auto" };
+  }
   if (body.parallel_tool_calls === false)
     out = { ...(out ?? { type: "auto" }), disable_parallel_tool_use: true };
-  return out;
+  return { choice: out, only };
 }
 
 interface ThinkingPlan {
@@ -276,6 +288,18 @@ interface ThinkingPlan {
   /** `output_config.effort`, adaptive-thinking models only. */
   effort?: string;
   maxTokens: number;
+}
+
+/**
+ * The wire field that turns thinking off for `model`: Sonnet 5.5+ only has `between_tools`, Sonnet
+ * 5 - 5.4 and Haiku 5.5+ take `disabled`. Other models think only when asked, so `reasoning_effort:
+ * "none"` sends nothing there; an explicit `disabled` is still forwarded unless the model (Opus 5.5,
+ * Fable) refuses every off switch.
+ */
+function thinkingOff(model: string, explicitDisable: boolean): Json | undefined {
+  if (usesBetweenToolsFloor(model)) return { type: "between_tools" };
+  if (supportsExplicitThinkingDisable(model)) return { type: "disabled" };
+  return explicitDisable && !hasNoThinkingOffSwitch(model) ? { type: "disabled" } : undefined;
 }
 
 /**
@@ -287,11 +311,15 @@ function planThinking(body: Json, model: string, requestedMax: number | undefine
   const maxTokens = requestedMax ?? DEFAULT_MAX_TOKENS;
   const explicit = isRecord(body.thinking) ? body.thinking : undefined;
   const type = explicit?.type;
-  if (type === "disabled" || type === "between_tools") return { thinking: { type }, maxTokens };
+  if (type === "between_tools") return { thinking: { type }, maxTokens };
 
   const effortIn = typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined;
-  if (type !== "enabled" && type !== "adaptive" && (!effortIn || effortIn === "none"))
-    return { maxTokens };
+  if (type === "disabled" || (type !== "enabled" && type !== "adaptive" && effortIn === "none")) {
+    // Models differ in how thinking is switched off; the field may have to change or disappear.
+    const off = thinkingOff(model, type === "disabled");
+    return off ? { thinking: off, maxTokens } : { maxTokens };
+  }
+  if (type !== "enabled" && type !== "adaptive" && !effortIn) return { maxTokens };
 
   const budget = typeof explicit?.budget_tokens === "number" ? explicit.budget_tokens : undefined;
   const display = typeof explicit?.display === "string" ? explicit.display : undefined;
@@ -338,6 +366,26 @@ function thinkingBreaksReplay(messages: AnthropicMessage[]): boolean {
   return first !== "thinking" && first !== "redacted_thinking";
 }
 
+/** OpenAI `response_format: json_schema` -> Anthropic `output_config.format`; other formats have no wire equivalent. */
+function outputFormat(responseFormat: unknown): Json | undefined {
+  if (!isRecord(responseFormat) || responseFormat.type !== "json_schema") return undefined;
+  const schema = isRecord(responseFormat.json_schema)
+    ? responseFormat.json_schema.schema
+    : undefined;
+  if (!isRecord(schema)) {
+    throw new InvalidRequestError(
+      "response_format.json_schema.schema is required for type json_schema.",
+    );
+  }
+  try {
+    return { type: "json_schema", schema: normalizeOutputSchema(schema) };
+  } catch (error) {
+    throw new InvalidRequestError(
+      `response_format.json_schema.schema is not supported: ${(error as Error).message}`,
+    );
+  }
+}
+
 export function toAnthropicRequest(body: Json, stream: boolean): Json {
   const model = String(body.model);
   if (!Array.isArray(body.messages)) throw new InvalidRequestError("messages must be an array.");
@@ -375,6 +423,10 @@ export function toAnthropicRequest(body: Json, stream: boolean): Json {
         throw new InvalidRequestError(`Unsupported message role "${String(message.role)}".`);
     }
   }
+  // Newer models reject an assistant-tail history as prefill, and a history without a message at all.
+  if (messages.length === 0 || messages.at(-1)!.role === "assistant") {
+    messages.push({ role: "user", content: [{ type: "text", text: "(continue)" }] });
+  }
   repairToolPairs(messages);
 
   const requestedMax = [body.max_tokens, body.max_completion_tokens].find(
@@ -390,16 +442,21 @@ export function toAnthropicRequest(body: Json, stream: boolean): Json {
       ? system
       : system.map((b) => b.text as string).join("\n\n");
   }
-  const tools = toTools(body.tools);
+  let tools = toTools(body.tools);
   if (tools) {
+    const { choice, only } = toToolChoice(body, model);
+    if (only !== undefined && tools.some((t) => t.name === only)) {
+      tools = tools.filter((t) => t.name === only);
+    }
     out.tools = tools;
-    const toolChoice = toToolChoice(body, model);
-    if (toolChoice) out.tool_choice = toolChoice;
+    if (choice) out.tool_choice = choice;
   }
   if (plan.thinking && !dropThinking) {
     out.thinking = plan.thinking;
     if (plan.effort) out.output_config = { effort: plan.effort };
   }
+  const format = outputFormat(body.response_format);
+  if (format) out.output_config = { ...(out.output_config as Json | undefined), format };
 
   const stop = (Array.isArray(body.stop) ? body.stop : [body.stop]).filter(
     (s): s is string => typeof s === "string" && s !== "",

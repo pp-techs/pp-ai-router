@@ -120,6 +120,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
         method: "POST",
         headers: {
           "content-type": "application/json",
+          accept: stream ? "text/event-stream" : "application/json",
           ...flavor.headers(token, "messages"),
           "anthropic-version": ANTHROPIC_VERSION,
         },

@@ -368,6 +368,15 @@ describe("token lifecycle", () => {
     expect((await chat(s, {})).status).toBeGreaterThanOrEqual(500);
     expect((await s.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
   });
+
+  it("treats the reference's revocation codes as final too", async () => {
+    const s = await setup();
+    await s.login();
+    s.token.failures.push(Response.json({ error: "refresh_token_revoked" }, { status: 401 }));
+    s.h.clock.now += HOUR;
+    expect((await chat(s, {})).status).toBeGreaterThanOrEqual(500);
+    expect((await s.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
+  });
 });
 
 describe("models and quota", () => {
@@ -450,6 +459,20 @@ describe("parseUsage", () => {
       ["5h", 1],
       ["Sonnet weekly", 55],
     ]);
+  });
+
+  it("reads a scoped limit whatever the case or padding of its kind", () => {
+    const quota = parseUsage({
+      five_hour: { utilization: 1, resets_at: null },
+      limits: [
+        {
+          kind: " Weekly_Scoped ",
+          percent: 30,
+          scope: { model: { display_name: "Claude Opus 5" } },
+        },
+      ],
+    });
+    expect(quota!.windows.map((w) => w.label)).toEqual(["5h", "Opus weekly"]);
   });
 
   it("is unusable without any window", () => {

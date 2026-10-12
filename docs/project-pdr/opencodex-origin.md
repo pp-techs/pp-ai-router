@@ -18,6 +18,8 @@ Per its own README: a "universal provider proxy for OpenAI Codex & Claude Code".
 
 pp-ai-router is **not** a fork: the router, governance, pool, pricing, admin API and admin UI are original. Only the per-provider protocol translation was ported.
 
+**Last synced with upstream**: v2.83.0 (`33b321853`, 2026-10-10) for the `anthropic`, `anthropic-subscription`, `antigravity` and `kiro` adapters. Use this commit as the base for the next `git diff`.
+
 ## What was adapted
 
 Every adapted file starts with `// Adapted from lidge-jun/opencodex (MIT)` (33 files under `apps/server/src/providers/`). The port target is the canonical OpenAI chat-completions shape used by `ProviderAdapter` (`providers/adapter.ts`), instead of opencodex's Responses-API front end.

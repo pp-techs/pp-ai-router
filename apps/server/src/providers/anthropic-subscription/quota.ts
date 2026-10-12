@@ -25,7 +25,12 @@ function bucketWindow(label: string, value: unknown): QuotaWindow | null {
 /** A `weekly_scoped` entry of `limits`: `{ percent, resets_at, scope: { model: { display_name } } }`. */
 function scopedLimitWindow(value: unknown): QuotaWindow | null {
   const limit = asRecord(value);
-  if (!limit || limit.kind !== "weekly_scoped") return null;
+  if (
+    !limit ||
+    typeof limit.kind !== "string" ||
+    limit.kind.trim().toLowerCase() !== "weekly_scoped"
+  )
+    return null;
   const used = normalizePercent(limit.percent);
   const displayName = asRecord(asRecord(limit.scope)?.model)?.display_name;
   const name = typeof displayName === "string" ? displayName.toLowerCase() : "";
@@ -86,7 +91,7 @@ export async function fetchAnthropicQuota(
   try {
     res = await doFetch(new URL("/api/oauth/usage", baseUrl), {
       headers: {
-        accept: "application/json",
+        accept: "application/json, text/plain, */*",
         "content-type": "application/json",
         "user-agent": CLI_USER_AGENT,
         "anthropic-beta": USAGE_BETA,

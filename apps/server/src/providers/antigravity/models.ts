@@ -35,10 +35,25 @@ const BASE_MODELS = [
   "gpt-oss-120b-medium",
 ];
 
-/** Fixed model list shown in the admin UI and `/v1/models`: the base ("picker") models above, with their documented output ceiling. */
+/**
+ * Context windows (the `maxTokens` of the backend's `:fetchAvailableModels` rows) and the input
+ * modalities the wire can carry. Google documents more for Gemini Flash (video, audio, PDF), but this
+ * adapter only maps text and images, so nothing more is advertised.
+ */
+const MODEL_FACTS: Record<string, { contextWindow: number; inputModalities: string[] }> = {
+  "gemini-3.8-flash": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
+  "gemini-3.7-flash": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
+  "gemini-3.1-pro": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
+  "gemini-3.1-flash-image": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
+  "claude-sonnet-4-6": { contextWindow: 250_000, inputModalities: ["text", "image"] },
+  "claude-opus-4-6-thinking": { contextWindow: 250_000, inputModalities: ["text", "image"] },
+  "gpt-oss-120b-medium": { contextWindow: 131_072, inputModalities: ["text"] },
+};
+
+/** Fixed model list shown in the admin UI and `/v1/models`: the base ("picker") models above, with their context window, modalities and documented output ceiling. */
 export const ANTIGRAVITY_MODELS: readonly ModelInfo[] = BASE_MODELS.map((id) => {
   const maxOutputTokens = maxOutputTokensForModel(id);
-  return maxOutputTokens === undefined ? { id } : { id, maxOutputTokens };
+  return { id, ...MODEL_FACTS[id], ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }) };
 });
 
 const MODEL_ALIASES: Record<string, string> = {

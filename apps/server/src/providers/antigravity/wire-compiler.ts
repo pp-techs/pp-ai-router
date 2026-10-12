@@ -221,3 +221,60 @@ export function compileGoogleWireBody(input: JsonObject): {
     body.sessionId = input.sessionId;
   return { body, restoreToolName: names.fromWire };
 }
+
+/** Upstream INVALID_ARGUMENT text blaming a tool or function declaration schema. */
+const TOOL_SCHEMA_ERROR = /(?:input[_ ]schema|json schema|function[_ ]declarations?|x-mcp-header)/i;
+/** Upstream INVALID_ARGUMENT text blaming the thinking configuration. */
+const THINKING_CONFIG_ERROR = /thinking[_ ]?(?:config|level)/i;
+
+/**
+ * One known-safe replay of a request Google answered with a 400 that blames its tool schemas or its
+ * thinking configuration: the rejected thinking config is dropped, and the rejected tool declaration
+ * (the one the error indexes, else every declaration) is opened up to a plain object schema. Returns
+ * the changed body, or `undefined` when the error is about something else or nothing can be changed.
+ */
+export function repairInvalidRequestBody(body: string, errorText: string): string | undefined {
+  const schemaError = TOOL_SCHEMA_ERROR.test(errorText);
+  const thinkingError = THINKING_CONFIG_ERROR.test(errorText);
+  if (!schemaError && !thinkingError) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed)) return undefined;
+  const root = isRecord(parsed.request) ? parsed.request : parsed;
+  let changed = false;
+
+  if (
+    thinkingError &&
+    isRecord(root.generationConfig) &&
+    "thinkingConfig" in root.generationConfig
+  ) {
+    delete root.generationConfig.thinkingConfig;
+    if (Object.keys(root.generationConfig).length === 0) delete root.generationConfig;
+    changed = true;
+  }
+
+  if (schemaError && Array.isArray(root.tools)) {
+    const declarations = root.tools.flatMap((tool) =>
+      isRecord(tool) && Array.isArray(tool.functionDeclarations)
+        ? tool.functionDeclarations.filter(isRecord)
+        : [],
+    );
+    if (declarations.length > 0) {
+      const indexed =
+        /tools(?:\.|\[)(\d+)(?:\])?\.custom\.input_schema/i.exec(errorText)?.[1] ??
+        /function[_]?declarations(?:\.|\[)(\d+)/i.exec(errorText)?.[1];
+      const rejected =
+        indexed === undefined ? undefined : declarations[Number.parseInt(indexed, 10)];
+      for (const declaration of rejected ? [rejected] : declarations) {
+        declaration.parameters = { type: "object", properties: {} };
+        delete declaration.parametersJsonSchema;
+      }
+      changed = true;
+    }
+  }
+  return changed ? JSON.stringify(parsed) : undefined;
+}

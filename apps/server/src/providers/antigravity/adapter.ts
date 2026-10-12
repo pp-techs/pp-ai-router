@@ -7,11 +7,14 @@ import { fetchAntigravityQuota } from "./quota.ts";
 import { createAntigravityOAuth, type OAuthDeps } from "./oauth.ts";
 import { buildRequest, UnsupportedRequestError, type BuiltRequest } from "./request.ts";
 import { chunksFromJson, chunksFromSse, GeminiMapper } from "./stream.ts";
+import { repairInvalidRequestBody } from "./wire-compiler.ts";
 
 /**
  * Google Antigravity (Cloud Code Assist): the OpenAI request is compiled into the `v1internal`
  * envelope, the Gemini SSE/JSON answer is mapped back to OpenAI chunks. Upstream non-2xx responses
- * are returned untouched (status, body and `retry-after`) so the gateway classifies 401/403/429/5xx.
+ * are returned untouched (status, body and `retry-after`) so the gateway classifies 401/403/429/5xx;
+ * the one exception is a 400 that blames the tool schemas or the thinking config, which is replayed
+ * once with those parts relaxed.
  */
 export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter {
   const doFetch = deps.fetch ?? fetch;
@@ -39,12 +42,21 @@ export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter 
         );
       }
 
-      const res = await doFetch(built.url, {
-        method: "POST",
-        headers: built.headers,
-        body: built.body,
-        signal,
-      });
+      const send = (requestBody: string) =>
+        doFetch(built.url, { method: "POST", headers: built.headers, body: requestBody, signal });
+      let res = await send(built.body);
+      if (res.status === 400) {
+        // A 400 that blames the tool schemas or the thinking config is replayed once with those
+        // parts relaxed (the Vertex/Antigravity "repair" of the reference); anything else is final.
+        const repaired = repairInvalidRequestBody(
+          built.body,
+          (await res.clone().text()).slice(0, 8_192),
+        );
+        if (repaired !== undefined) {
+          await res.body?.cancel().catch(() => {});
+          res = await send(repaired);
+        }
+      }
       if (!res.ok) return res;
       if (!res.body) throw new Error("Antigravity returned an empty response body");
 

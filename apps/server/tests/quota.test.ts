@@ -149,6 +149,21 @@ describe("Kiro usage", () => {
     expect(none.seen).toHaveLength(0);
   });
 
+  it("asks the management host of the profile ARN's region, even when apiRegion says otherwise", async () => {
+    const f = scriptedFetch(json(kiroUsage()));
+    await fetchKiroQuota(
+      call({
+        baseUrl: "https://runtime.us-east-1.kiro.dev",
+        meta: {
+          profileArn: "arn:aws:codewhisperer:eu-central-1:111122223333:profile/ABC",
+          apiRegion: "us-east-1",
+        },
+      }),
+      f.fetch,
+    );
+    expect(f.seen[0]!.url.origin).toBe("https://management.eu-central-1.kiro.dev");
+  });
+
   it.each([
     [401, "access_denied"],
     [403, "access_denied"],

@@ -8,7 +8,7 @@ import {
   readQuotaJson,
   toFiniteNumber,
 } from "../../quota/wire.ts";
-import { resolveApiRegion, resolveIdentity } from "./wire.ts";
+import { resolveIdentity, resolveUsageRegion } from "./wire.ts";
 
 const AMZ_USAGE_TARGET = "AmazonCodeWhispererService.GetUsageLimits";
 const CANONICAL_RUNTIME_HOST = /^runtime\.([a-z]{2}(?:-[a-z]+)+-\d)\.kiro\.dev$/i;
@@ -101,7 +101,7 @@ export async function fetchKiroQuota(
   // sign in again rather than borrow another profile.
   if (!profileArn) throw new QuotaError("account_unavailable");
 
-  const url = new URL(usageEndpoint(baseUrl, resolveApiRegion(meta)));
+  const url = new URL(usageEndpoint(baseUrl, resolveUsageRegion(meta)));
   url.searchParams.set("origin", "AI_EDITOR");
   url.searchParams.set("isEmailRequired", "true");
   url.searchParams.set("profileArn", profileArn);

@@ -375,6 +375,83 @@ describe("anthropic adapter: request mapping", () => {
     expect(up.calls).toHaveLength(0);
   });
 
+  it("downgrades a forced tool choice on models that refuse it, keeping the tool it named", async () => {
+    const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "ok" }]));
+    const other = { type: "function", function: { name: "other", parameters: { type: "object" } } };
+    const forced = { type: "function", function: { name: "get_weather" } };
+    await chat(h, key, {
+      model: "claude/claude-sonnet-5-5",
+      tools: [weatherTool, other],
+      tool_choice: forced,
+    });
+    await chat(h, key, {
+      model: "claude/claude-sonnet-5",
+      tools: [weatherTool, other],
+      tool_choice: forced,
+    });
+    expect(up.calls[0]!.body.tool_choice).toEqual({ type: "auto" });
+    expect(up.calls[0]!.body.tools.map((t: { name: string }) => t.name)).toEqual(["get_weather"]);
+    expect(up.calls[1]!.body.tool_choice).toEqual({ type: "tool", name: "get_weather" });
+    expect(up.calls[1]!.body.tools).toHaveLength(2);
+  });
+
+  it("ends an assistant-tail history with a user turn, as models without prefill require", async () => {
+    const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "ok" }]));
+    await chat(h, key, {
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "Hello" },
+      ],
+    });
+    expect(up.calls[0]!.body.messages.at(-1)).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "(continue)" }],
+    });
+  });
+
+  it("maps response_format json_schema to output_config.format and rejects an untyped schema", async () => {
+    const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "{}" }]));
+    await chat(h, key, {
+      reasoning_effort: "low",
+      model: "claude/claude-sonnet-5",
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "out",
+          schema: {
+            type: "object",
+            properties: {
+              when: { type: "string", format: "date" },
+              n: { type: "integer", minimum: 1 },
+            },
+            required: ["when"],
+          },
+        },
+      },
+    });
+    expect(up.calls[0]!.body.output_config).toEqual({
+      effort: "low",
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: {
+            when: { type: "string", format: "date" },
+            n: { type: "integer", description: "{minimum: 1}" },
+          },
+          additionalProperties: false,
+          required: ["when"],
+        },
+      },
+    });
+
+    const res = await chat(h, key, {
+      response_format: { type: "json_schema", json_schema: { schema: { properties: {} } } },
+    });
+    expect(res.status).toBe(400);
+    expect(up.calls).toHaveLength(1);
+  });
+
   describe("thinking", () => {
     const run = async (model: string, body: Record<string, unknown>) => {
       const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "ok" }]));
@@ -445,6 +522,47 @@ describe("anthropic adapter: request mapping", () => {
         messages: toolHistory({ reasoning_content: "hmm" }),
       });
       expect(unsigned).not.toHaveProperty("thinking");
+    });
+
+    it("follows the family contract for adaptive-only Haiku 5.5 and for switching thinking off", async () => {
+      const haiku = await run("claude/claude-haiku-5-5", {
+        reasoning_effort: "low",
+        temperature: 0.3,
+      });
+      expect(haiku.thinking).toEqual({ type: "adaptive", display: "summarized" });
+      expect(haiku.output_config).toEqual({ effort: "low" });
+      expect(haiku).not.toHaveProperty("temperature");
+
+      const off = (model: string, extra: Record<string, unknown>) => run(`claude/${model}`, extra);
+      expect((await off("claude-haiku-5-5", { reasoning_effort: "none" })).thinking).toEqual({
+        type: "disabled",
+      });
+      expect((await off("claude-sonnet-5", { reasoning_effort: "none" })).thinking).toEqual({
+        type: "disabled",
+      });
+      expect((await off("claude-sonnet-5-5", { reasoning_effort: "none" })).thinking).toEqual({
+        type: "between_tools",
+      });
+      expect((await off("claude-sonnet-5-5", { thinking: { type: "disabled" } })).thinking).toEqual(
+        {
+          type: "between_tools",
+        },
+      );
+      // Models that think only on request have nothing to disable; Fable and Opus 5.5 refuse every switch.
+      expect(await off("claude-sonnet-4-5", { reasoning_effort: "none" })).not.toHaveProperty(
+        "thinking",
+      );
+      expect((await off("claude-sonnet-4-5", { thinking: { type: "disabled" } })).thinking).toEqual(
+        {
+          type: "disabled",
+        },
+      );
+      expect(await off("claude-fable-5", { thinking: { type: "disabled" } })).not.toHaveProperty(
+        "thinking",
+      );
+      expect(await off("claude-opus-5-5", { reasoning_effort: "none" })).not.toHaveProperty(
+        "thinking",
+      );
     });
   });
 });
@@ -518,6 +636,7 @@ describe("anthropic adapter: response mapping", () => {
       max_tokens: "length",
       tool_use: "tool_calls",
       refusal: "content_filter",
+      content_filter: "content_filter",
     };
     const { h, key } = await claude((_c, n) =>
       anthropicMessage([{ type: "text", text: "x" }], {
@@ -527,6 +646,45 @@ describe("anthropic adapter: response mapping", () => {
     for (const expected of Object.values(reasons)) {
       expect((await readJson(await chat(h, key, {}))).choices[0].finish_reason).toBe(expected);
     }
+  });
+
+  it("fails a turn that ends with stop_reason error instead of reporting a stop", async () => {
+    const { h, key } = await claude(() =>
+      anthropicMessage([{ type: "text", text: "x" }], { stop_reason: "error" }),
+    );
+    expect((await chat(h, key, {})).ok).toBe(false);
+  });
+
+  it("reports thinking tokens as a share of the output and gives a blank tool_use id a usable one", async () => {
+    const { h, key } = await claude(() =>
+      anthropicMessage([{ type: "tool_use", id: "  ", name: "get_weather", input: {} }], {
+        stop_reason: "tool_use",
+        usage: {
+          input_tokens: 10,
+          output_tokens: 20,
+          output_tokens_details: { thinking_tokens: 8 },
+        } as unknown as Record<string, number>,
+      }),
+    );
+    const body = await readJson(await chat(h, key, { tools: [weatherTool] }));
+    expect(body.usage.completion_tokens).toBe(20);
+    expect(body.usage.completion_tokens_details).toEqual({ reasoning_tokens: 8 });
+    expect(body.choices[0].message.tool_calls[0].id).toMatch(/^toolu_[0-9a-f]{24}$/);
+  });
+
+  it("completes a stream that closes after a stop reason without message_stop", async () => {
+    const { h, key } = await claude(() =>
+      anthropicSse([
+        ["message_start", { message: { model: "c", usage: { input_tokens: 3 } } }],
+        ["content_block_start", { index: 0, content_block: { type: "text", text: "" } }],
+        ["content_block_delta", { index: 0, delta: { type: "text_delta", text: "hi" } }],
+        ["content_block_stop", { index: 0 }],
+        ["message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } }],
+      ]),
+    );
+    const text = await (await chat(h, key, { stream: true })).text();
+    expect(text).toContain('"finish_reason":"stop"');
+    expect(text.endsWith("data: [DONE]\n\n")).toBe(true);
   });
 
   it("streams thinking, text and tool calls as OpenAI chunks with usage last, and bills the stream", async () => {
