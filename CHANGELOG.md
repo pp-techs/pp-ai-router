@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.11.0] — 2026-10-12
+
+Anthropic Subscription now presents the Claude Code request the way oh-my-pi does, which tracks the CLI more closely than opencodex. Requests go to `/messages?beta=true` with the CLI user agent, SDK version, `x-app`/`anthropic-dangerous-direct-browser-access` headers, the CLI beta set (`effort` added when the request thinks, `context-1m` never) and a `metadata.user_id` naming the device, a per-conversation session and the account. The system prompt starts with the signed billing block (`cc_version`, first-turn fingerprint, `cch` XXH64 attestation) and the `You are Claude Code…` identity. Client tools are wrapped with the `_` prefix instead of `custom_`. A `claude_code_version_too_old` rejection moves the presented version up and resends once. Sign-in asks for the six current scopes and records the organization (completed from `/api/claude_cli/bootstrap` when the token response omits it); refreshes send the SDK's OAuth headers. The usage probe uses the CLI's betas and reads Mythos weekly limits. Request bodies may now be sent as bytes (`PreparedRequest`) by a provider flavor.
+
+The credential pool understands model scopes (`ProviderAdapter.modelScope`, `QuotaWindow.scope`, `Quota.complete`). For Anthropic Subscription, Opus, Sonnet, Fable and Mythos are scopes: a spent family window parks that family only, a Fable/Mythos 429 cools the account for that family only, and a complete usage reading lifts that cooldown early. Every Claude answer's `anthropic-ratelimit-unified-*` headers are read (`UpstreamCall.observe` → `QuotaService.observe`) and park the account, or the Fable scope, as soon as a window reads 100% instead of at the next probe.
+
 ## [0.10.0] — 2026-10-12
 
 Per-model limits on API keys. A limit may carry a `model` glob (e.g. `openai/gpt-4o`, `claude-*`; null = every model) matched against the requested model: it only gates requests for matching models and counts only their usage, for any metric (USD, input/output/total tokens, requests) and window. Per-model usage is tracked in `usage_model_buckets` and seeded from the ledger on upgrade. The admin API and the 429 `limit_exceeded` error report the limit's `model`; the keys page can set it.
