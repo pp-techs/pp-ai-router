@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.12.0] — 2026-10-14
+
+Custom upstream headers. A provider carries a `headers` map (JSON in the new `providers.headers`, `credentials.headers` columns) that every request to it sends — chat completions, the model-list fetch and the OAuth account-quota probe — and each credential carries its own map that overrides the provider's per name, so one API key can send a different value for a header than its siblings. The admin API validates both: names must be HTTP tokens, values single-line (at most 20 headers, 1000 characters each), and the headers that frame the request or the connection (`host`, `content-length`, hop-by-hop ones) are refused. An adapter applies the merge last, so a custom header can deliberately override one the adapter itself sets. Header values are stored unencrypted per provider/credential and never written to the audit log, only their names. The Add provider, Edit provider, Add API key and Edit credential dialogs edit them as name/value rows.
+
+`PATCH /admin/providers/:id` no longer resets the fields a body leaves out: the request schema's defaults used to apply to a partial patch, so toggling a provider from the Providers page silently reset its `key_strategy`, `sticky_ttl_sec` and `max_key_attempts`.
+
+Dialogs no longer let a form widen them past their max width: the shared dialog body is a single `minmax(0, 1fr)` column whose children may shrink, and the alias editor's target rows are `minmax(0, …)` tracks that stack on narrow screens instead of forcing the popup wider.
+
 ## [0.11.0] — 2026-10-12
 
 Anthropic Subscription now presents the Claude Code request the way oh-my-pi does, which tracks the CLI more closely than opencodex. Requests go to `/messages?beta=true` with the CLI user agent, SDK version, `x-app`/`anthropic-dangerous-direct-browser-access` headers, the CLI beta set (`effort` added when the request thinks, `context-1m` never) and a `metadata.user_id` naming the device, a per-conversation session and the account. The system prompt starts with the signed billing block (`cc_version`, first-turn fingerprint, `cch` XXH64 attestation) and the `You are Claude Code…` identity. Client tools are wrapped with the `_` prefix instead of `custom_`. A `claude_code_version_too_old` rejection moves the presented version up and resends once. Sign-in asks for the six current scopes and records the organization (completed from `/api/claude_cli/bootstrap` when the token response omits it); refreshes send the SDK's OAuth headers. The usage probe uses the CLI's betas and reads Mythos weekly limits. Request bodies may now be sent as bytes (`PreparedRequest`) by a provider flavor.
