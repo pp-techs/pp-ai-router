@@ -3,7 +3,7 @@ import { Hono, type Context } from "hono";
 import * as z from "zod";
 import { insertCredential } from "../credentials.ts";
 import type { SecretBox } from "../crypto.ts";
-import { all, one, type Db } from "../db/database.ts";
+import { all, one, transaction, type Db } from "../db/database.ts";
 import { HttpError } from "../errors.ts";
 import {
   formatWindow,
@@ -106,6 +106,11 @@ const aliasBody = z.strictObject({
     .max(20),
 });
 const modelPatch = z.strictObject({ enabled: z.boolean() });
+/** `models` omitted = every model the provider lists (and, for enabling, every disabled id). */
+const modelBulkPatch = z.strictObject({
+  enabled: z.boolean(),
+  models: z.array(z.string().min(1).max(500)).max(100_000).optional(),
+});
 
 const limitInput = z.strictObject({
   metric: z.enum(METRICS),
@@ -475,6 +480,45 @@ export function createAdminApp(deps: AdminDeps): Hono {
       })),
     }),
   );
+
+  /** Switches many of one provider's models at once, e.g. everything but a handful of OpenRouter's. */
+  app.patch("/models/:provider", async (c) => {
+    const provider = c.req.param("provider");
+    if (!registry.provider(provider)) throw notFound("Provider");
+    const { enabled, models: requested } = await parse(c, modelBulkPatch);
+    const ids = requested ?? models.get(provider).models.map((m) => m.id);
+    transaction(db, () => {
+      if (enabled) {
+        if (requested === undefined) {
+          db.prepare("DELETE FROM disabled_models WHERE provider_id = ?").run(provider);
+        } else {
+          const remove = db.prepare(
+            "DELETE FROM disabled_models WHERE provider_id = ? AND model_id = ?",
+          );
+          for (const id of ids) remove.run(provider, id);
+        }
+      } else {
+        const insert = db.prepare(
+          "INSERT OR IGNORE INTO disabled_models (provider_id, model_id, disabled_at) VALUES (?, ?, ?)",
+        );
+        const at = now();
+        for (const id of ids) insert.run(provider, id, at);
+      }
+    });
+    registry.reload();
+    audit?.record({
+      category: "admin",
+      action: enabled ? "model.enable_many" : "model.disable_many",
+      actor: "admin",
+      targetType: "provider",
+      targetId: provider,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { provider, enabled, count: requested === undefined && enabled ? null : ids.length },
+    });
+    return c.json({ provider, enabled, count: ids.length });
+  });
 
   /** Switches one model on or off. Any `provider/model` id can be routed to, so it need not be in the list. */
   app.patch("/models/:provider/:model{.+}", async (c) => {

@@ -1,5 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BoxesIcon, RefreshCwIcon, SearchIcon, TriangleAlertIcon } from "lucide-react";
+import {
+  BoxesIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
@@ -73,8 +80,12 @@ interface ResultsProps {
   providers: Provider[] | undefined;
   pending: string | null;
   refreshing: string | null;
+  /** The provider whose bulk switch is being saved. */
+  bulkPending: string | null;
   onToggle: (row: ModelRow, enabled: boolean) => void;
   onRefresh: (provider: string) => void;
+  /** `ids` absent = the provider's whole list. */
+  onBulk: (provider: string, enabled: boolean, ids?: string[]) => void;
 }
 
 function Results({
@@ -85,12 +96,21 @@ function Results({
   providers,
   pending,
   refreshing,
+  bulkPending,
   onToggle,
   onRefresh,
+  onBulk,
 }: ResultsProps) {
   const [shown, setShown] = useState<Record<string, number>>({});
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const limit = (key: string) => shown[key] ?? PAGE;
   const more = (key: string) => setShown((s) => ({ ...s, [key]: limit(key) + PAGE }));
+  const toggleCollapsed = (provider: string) =>
+    setCollapsed((s) => {
+      const next = new Set(s);
+      if (!next.delete(provider)) next.add(provider);
+      return next;
+    });
 
   const visible = filterGroups(groups, search, status);
   const filtering = visible !== groups;
@@ -108,7 +128,7 @@ function Results({
     : undefined;
 
   const summary = (
-    <p className="mb-4 text-xs text-muted-foreground">
+    <p className="text-xs text-muted-foreground">
       {plural(total, "model")} across {plural(groups.length, "provider")}
       {disabled > 0 && ` · ${formatInt(disabled)} disabled`}
     </p>
@@ -120,7 +140,7 @@ function Results({
       : "No models match the filter";
     return (
       <>
-        {summary}
+        <div className="mb-4">{summary}</div>
         <Panel>
           <EmptyState title={label} icon={SearchIcon} />
         </Panel>
@@ -132,7 +152,7 @@ function Results({
     const rows = flattenGroups(visible);
     return (
       <>
-        {summary}
+        <div className="mb-4">{summary}</div>
         <Panel flush>
           <ModelTable
             rows={rows.slice(0, limit(FLAT))}
@@ -147,21 +167,52 @@ function Results({
     );
   }
 
+  const providerKeys = visible.map((g) => g.provider);
+  const allCollapsed = providerKeys.length > 0 && providerKeys.every((p) => collapsed.has(p));
+
   return (
     <>
-      {summary}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        {summary}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(providerKeys))}
+        >
+          {allCollapsed ? "Expand all" : "Collapse all"}
+        </Button>
+      </div>
       <div className="grid gap-6">
         {visible.map((group) => {
           const full = all.get(group.provider) ?? group;
           const rows = group.data.map((model) => ({ provider: group.provider, model }));
           const isRefreshing = refreshing === group.provider;
+          const isCollapsed = collapsed.has(group.provider);
+          const busy = bulkPending === group.provider;
+          // With a filter on, the bulk buttons act on the models shown, otherwise on the whole list.
+          const scope = filtering ? "shown" : "all";
+          const bulkIds = filtering ? group.data.map((m) => m.id) : undefined;
           return (
             <Panel
               key={group.provider}
               flush
+              collapsed={isCollapsed}
               title={
                 <span className="flex items-center gap-2">
-                  <span className="font-mono">{group.provider}</span>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-expanded={!isCollapsed}
+                    aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${group.provider}`}
+                    onClick={() => toggleCollapsed(group.provider)}
+                  >
+                    {isCollapsed ? (
+                      <ChevronRightIcon className="size-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDownIcon className="size-4 text-muted-foreground" />
+                    )}
+                    <span className="font-mono">{group.provider}</span>
+                  </button>
                   {!group.provider_enabled && (
                     <StatusBadge tone="warn">provider disabled</StatusBadge>
                   )}
@@ -169,22 +220,44 @@ function Results({
               }
               description={describeGroup(full)}
               actions={
-                group.source !== "static" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={isRefreshing}
-                    aria-label={`Refresh ${group.provider} models`}
-                    onClick={() => onRefresh(group.provider)}
-                  >
-                    {isRefreshing ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <RefreshCwIcon data-icon="inline-start" />
-                    )}
-                    Refresh
-                  </Button>
-                )
+                <>
+                  {group.data.some((m) => m.enabled) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => onBulk(group.provider, false, bulkIds)}
+                    >
+                      Disable {scope}
+                    </Button>
+                  )}
+                  {group.data.some((m) => !m.enabled) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => onBulk(group.provider, true, bulkIds)}
+                    >
+                      Enable {scope}
+                    </Button>
+                  )}
+                  {group.source !== "static" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isRefreshing}
+                      aria-label={`Refresh ${group.provider} models`}
+                      onClick={() => onRefresh(group.provider)}
+                    >
+                      {isRefreshing ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <RefreshCwIcon data-icon="inline-start" />
+                      )}
+                      Refresh
+                    </Button>
+                  )}
+                </>
               }
             >
               {full.error && (
@@ -267,6 +340,20 @@ export function ModelsTab() {
     },
   });
 
+  const bulk = useAction(
+    ({ provider, enabled, ids }: { provider: string; enabled: boolean; ids?: string[] }) =>
+      api.setModelsEnabled(provider, enabled, ids),
+    {
+      invalidate: [qk.models],
+      onSuccess: (result) => {
+        void client.invalidateQueries({ queryKey: qk.providerModels(result.provider) });
+        toast.success(
+          `${result.enabled ? "Enabled" : "Disabled"} ${plural(result.count, "model")} of ${result.provider}.`,
+        );
+      },
+    },
+  );
+
   const pending = toggle.isPending
     ? `${toggle.variables.row.provider}/${toggle.variables.row.model.id}`
     : null;
@@ -325,8 +412,10 @@ export function ModelsTab() {
             providers={providers.data}
             pending={pending}
             refreshing={refresh.isPending ? (refresh.variables ?? null) : null}
+            bulkPending={bulk.isPending ? bulk.variables.provider : null}
             onToggle={(row, enabled) => toggle.mutate({ row, enabled })}
             onRefresh={(provider) => refresh.mutate(provider)}
+            onBulk={(provider, enabled, ids) => bulk.mutate({ provider, enabled, ids })}
           />
         )}
       </QueryBoundary>

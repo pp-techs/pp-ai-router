@@ -14,35 +14,28 @@ import { formatPer1m } from "@/lib/format";
 import { formatContextWindow, type ModelRow } from "@/lib/models";
 import type { ProviderModel } from "@/api/types";
 import { cn } from "@/lib/utils";
-/** Modalities, release date and the supported request parameters: whatever the catalog knows about a model. */
-function ModelFacts({ model: m }: { model: ProviderModel }) {
-  const modalities = [
-    ...(m.input_modalities ?? []).map((x) => `${x} in`),
-    ...(m.output_modalities ?? []).map((x) => `${x} out`),
-  ];
+/** "text, image → text": what a model takes in and gives out, when the catalog knows. */
+function modalitySummary(m: ProviderModel): string | null {
+  const input = m.input_modalities ?? [];
+  const output = m.output_modalities ?? [];
+  if (input.length === 0 && output.length === 0) return null;
+  return `${input.join(", ") || "?"} → ${output.join(", ") || "?"}`;
+}
+
+/** Modalities and the supported request parameters as tags, on one line. */
+function ModelTags({ model: m }: { model: ProviderModel }) {
+  const modalities = modalitySummary(m);
   const params = m.supported_parameters ?? [];
-  if (modalities.length === 0 && params.length === 0 && m.created === null) return null;
+  if (modalities === null && params.length === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
   return (
-    <div className="mt-1 space-y-1 font-sans no-underline">
-      {modalities.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {modalities.map((x) => (
-            <StatusBadge key={x} tone="neutral">
-              {x}
-            </StatusBadge>
-          ))}
-        </div>
-      )}
-      {m.created !== null && (
-        <p className="text-muted-foreground">
-          Released {new Date(m.created * 1000).toISOString().slice(0, 10)}
-        </p>
-      )}
+    <div className="flex flex-nowrap gap-1 whitespace-nowrap">
+      {modalities !== null && <StatusBadge tone="neutral">{modalities}</StatusBadge>}
       {params.length > 0 && (
-        <details className="text-muted-foreground">
-          <summary className="cursor-pointer">{params.length} parameters</summary>
-          <p className="font-mono">{params.join(", ")}</p>
-        </details>
+        <span title={params.join(", ")}>
+          <StatusBadge tone="neutral">{params.length} params</StatusBadge>
+        </span>
       )}
     </div>
   );
@@ -73,6 +66,7 @@ export function ModelTable({
           <TableHead className="text-right">Max output</TableHead>
           <TableHead className="text-right">Input / 1M</TableHead>
           <TableHead className="text-right">Output / 1M</TableHead>
+          <TableHead>Tags</TableHead>
           <TableHead>Price source</TableHead>
           <TableHead>Enabled</TableHead>
           <TableHead className="w-10">
@@ -89,21 +83,17 @@ export function ModelTable({
               {showProvider && <TableCell className="font-mono text-xs">{provider}</TableCell>}
               <TableCell
                 className={cn(
-                  "font-mono text-xs break-all whitespace-normal",
+                  "max-w-80 truncate font-mono text-xs",
                   !m.enabled && "text-muted-foreground line-through decoration-1",
                 )}
+                title={m.name ? `${m.id} — ${m.name}` : m.id}
               >
                 {m.id}
-                {m.name && <p className="font-sans text-muted-foreground no-underline">{m.name}</p>}
-                {m.description && (
-                  <p
-                    className="line-clamp-2 font-sans text-muted-foreground no-underline"
-                    title={m.description}
-                  >
-                    {m.description}
-                  </p>
+                {m.name && m.name !== m.id && (
+                  <span className="ml-2 font-sans text-muted-foreground no-underline">
+                    {m.name}
+                  </span>
                 )}
-                <ModelFacts model={m} />
               </TableCell>
               <TableCell
                 className="text-right tabular-nums"
@@ -124,6 +114,9 @@ export function ModelTable({
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 {formatPer1m(m.price?.output_per_1m ?? null)}
+              </TableCell>
+              <TableCell>
+                <ModelTags model={m} />
               </TableCell>
               <TableCell>
                 {m.price ? (

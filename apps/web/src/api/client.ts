@@ -102,6 +102,13 @@ export const api = {
       `/admin/models/${id(providerId)}/${slashPath(model)}`,
       { body: { enabled } },
     ),
+  /** Switches several of one provider's models at once; without `models`, every model it lists. */
+  setModelsEnabled: (providerId: string, enabled: boolean, models?: string[]) =>
+    request<{ provider: string; enabled: boolean; count: number }>(
+      "PATCH",
+      `/admin/models/${id(providerId)}`,
+      { body: models ? { enabled, models } : { enabled } },
+    ),
 
   keys: () => unwrap(request<List<VirtualKey>>("GET", "/admin/keys")),
   createKey: (body: KeyCreate) => request<CreatedKey>("POST", "/admin/keys", { body }),

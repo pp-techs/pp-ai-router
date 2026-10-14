@@ -356,6 +356,39 @@ describe("disabling models", () => {
     expect((await h.admin("PATCH", "/models/acme/alpha", { enabled: "no" })).status).toBe(400);
   });
 
+  it("switches many of a provider's models at once", async () => {
+    const up = await modelsServer(() => openAiList("alpha", "beta", "gamma"));
+    const h = createHarness();
+    await h.addProvider("acme", up.url, ["k"]);
+    await h.admin("POST", "/providers/acme/models/refresh");
+    const flags = async () =>
+      Object.fromEntries(
+        (await h.admin("GET", "/models")).json.data[0].data.map((m: ModelFlag) => [
+          m.id,
+          m.enabled,
+        ]),
+      );
+
+    expect(await h.admin("PATCH", "/models/acme", { enabled: false })).toMatchObject({
+      status: 200,
+      json: { provider: "acme", enabled: false, count: 3 },
+    });
+    expect(await flags()).toEqual({ alpha: false, beta: false, gamma: false });
+
+    await h.admin("PATCH", "/models/acme", { enabled: true, models: ["alpha", "gamma"] });
+    expect(await flags()).toEqual({ alpha: true, beta: false, gamma: true });
+
+    await h.admin("PATCH", "/models/acme", { enabled: false, models: ["alpha"] });
+    expect(await flags()).toEqual({ alpha: false, beta: false, gamma: true });
+
+    await h.admin("PATCH", "/models/acme", { enabled: true });
+    expect(await flags()).toEqual({ alpha: true, beta: true, gamma: true });
+    expect((await h.admin("PATCH", "/models/ghost", { enabled: false })).status).toBe(404);
+    expect((await h.admin("PATCH", "/models/acme", { enabled: false, models: [""] })).status).toBe(
+      400,
+    );
+  });
+
   it("forgets a provider's disabled models with the provider", async () => {
     const up = await modelsServer(() => openAiList("alpha"));
     const h = createHarness();

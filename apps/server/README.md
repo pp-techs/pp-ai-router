@@ -31,6 +31,7 @@ GET|POST   /admin/providers            PATCH|DELETE /admin/providers/:id
 GET|POST   /admin/providers/:id/credentials     PATCH|DELETE /admin/credentials/:id
 GET        /admin/providers/:id/models          POST /admin/providers/:id/models/refresh
 GET        /admin/models                        PATCH /admin/models/:provider/:model   {enabled}
+PATCH      /admin/models/:provider              {enabled, models?}   (bulk; no models = whole list)
 GET        /admin/providers/:id/quota[?refresh=true]    GET /admin/credentials/:id/quota[?refresh=true]
 GET        /admin/aliases              PUT|DELETE   /admin/aliases/:alias
 GET|POST   /admin/keys                 GET|PATCH|DELETE /admin/keys/:id

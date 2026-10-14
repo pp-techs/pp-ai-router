@@ -25,7 +25,10 @@ export function PageHeader({
   );
 }
 
-/** A titled card section. `flush` drops the content padding for tables that run edge to edge. */
+/**
+ * A titled card section. `flush` drops the content padding for tables that run edge to edge;
+ * `collapsed` leaves just the header.
+ */
 export function Panel({
   title,
   description,
@@ -33,6 +36,7 @@ export function Panel({
   children,
   className,
   flush = false,
+  collapsed = false,
 }: {
   title?: ReactNode;
   description?: ReactNode;
@@ -40,17 +44,18 @@ export function Panel({
   children: ReactNode;
   className?: string;
   flush?: boolean;
+  collapsed?: boolean;
 }) {
   return (
     <Card className={cn("min-w-0", className)}>
       {(title || actions) && (
-        <CardHeader className="border-b">
+        <CardHeader className={cn(!collapsed && "border-b")}>
           <CardTitle>{title}</CardTitle>
           {description && <p className="text-sm text-muted-foreground">{description}</p>}
           {actions && <CardAction className="flex items-center gap-2">{actions}</CardAction>}
         </CardHeader>
       )}
-      <CardContent className={cn(flush && "px-0")}>{children}</CardContent>
+      {!collapsed && <CardContent className={cn(flush && "px-0")}>{children}</CardContent>}
     </Card>
   );
 }
