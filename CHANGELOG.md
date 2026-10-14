@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.13.0] — 2026-10-14
+
+Models page: rows are one line (no description or release date; modalities and the parameter count are tags in their own column), provider groups collapse (with Collapse all / Expand all), and each group has Disable all / Enable all to switch a whole provider's list at once, e.g. everything on OpenRouter except a few models. With a search or status filter on, the buttons act on the models shown. Server: `PATCH /admin/models/:provider` `{enabled, models?}` switches many models in one call (`models` omitted = every model the provider lists).
+
 ## [0.12.0] — 2026-10-14
 
 Custom upstream headers. A provider carries a `headers` map (JSON in the new `providers.headers`, `credentials.headers` columns) that every request to it sends — chat completions, the model-list fetch and the OAuth account-quota probe — and each credential carries its own map that overrides the provider's per name, so one API key can send a different value for a header than its siblings. The admin API validates both: names must be HTTP tokens, values single-line (at most 20 headers, 1000 characters each), and the headers that frame the request or the connection (`host`, `content-length`, hop-by-hop ones) are refused. An adapter applies the merge last, so a custom header can deliberately override one the adapter itself sets. Header values are stored unencrypted per provider/credential and never written to the audit log, only their names. The Add provider, Edit provider, Add API key and Edit credential dialogs edit them as name/value rows.
