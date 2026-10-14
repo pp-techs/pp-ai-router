@@ -155,7 +155,7 @@ export function parseModelQuotas(body: unknown): Quota | null {
  * too, and the caller refreshes the token.
  */
 export async function fetchAntigravityQuota(
-  { baseUrl, token, meta, signal }: QuotaCall,
+  { baseUrl, token, meta, headers, signal }: QuotaCall,
   doFetch: typeof fetch,
 ): Promise<Quota> {
   const project = meta[PROJECT_KEY];
@@ -169,6 +169,7 @@ export async function fetchAntigravityQuota(
         "content-type": "application/json",
         "user-agent": userAgent,
         authorization: `Bearer ${token}`,
+        ...headers,
       },
       body: JSON.stringify({ project }),
       signal,

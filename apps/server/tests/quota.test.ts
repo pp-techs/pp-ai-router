@@ -14,6 +14,7 @@ const call = (overrides: Partial<QuotaCall> = {}): QuotaCall => ({
   baseUrl: "http://upstream.test",
   token: "tok",
   meta: {},
+  headers: {},
   signal: new AbortController().signal,
   ...overrides,
 });

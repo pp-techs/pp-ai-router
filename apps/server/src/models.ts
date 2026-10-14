@@ -4,6 +4,7 @@ import type { ModelMetadataStore } from "./model-metadata.ts";
 import type { TokenManager } from "./oauth/token-manager.ts";
 import type { ModelDetails, ModelInfo, ProviderAdapter } from "./providers/adapter.ts";
 import type { Registry } from "./registry.ts";
+import { mergeHeaders } from "./upstream-headers.ts";
 
 export interface ModelList {
   /** `static` = fixed list shipped with the adapter; `fetched` = from the upstream; `none` = nothing known yet. */
@@ -179,6 +180,7 @@ export class ModelCatalog {
           baseUrl: provider.baseUrl,
           token: auth.token,
           meta: auth.meta,
+          headers: mergeHeaders(provider.headers, credential.headers),
           signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
         });
         if (models.length === 0) throw new Error("provider returned no models");

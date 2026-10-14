@@ -1,4 +1,5 @@
 import type { Credential, CredentialCreate } from "../api/types.ts";
+import { headerMap, headerRows, type HeaderRow } from "./headers.ts";
 import { formatList, optionalNumber, parseList } from "./input.ts";
 
 /** Credential form state: numbers stay text until submit so inputs can be blank while typing. */
@@ -9,6 +10,7 @@ export interface CredentialDraft {
   models: string;
   rpm: string;
   enabled: boolean;
+  headers: HeaderRow[];
 }
 
 export const emptyCredentialDraft = (): CredentialDraft => ({
@@ -18,6 +20,7 @@ export const emptyCredentialDraft = (): CredentialDraft => ({
   models: "",
   rpm: "",
   enabled: true,
+  headers: [],
 });
 
 export const draftFromCredential = (c: Credential): CredentialDraft => ({
@@ -27,6 +30,7 @@ export const draftFromCredential = (c: Credential): CredentialDraft => ({
   models: formatList(c.models),
   rpm: c.rpm_limit === null ? "" : String(c.rpm_limit),
   enabled: c.enabled,
+  headers: headerRows(c.headers),
 });
 
 /** Everything but the secret; the inputs' native min/max have already validated the numbers. */
@@ -38,5 +42,6 @@ export function draftToBody(draft: CredentialDraft): Omit<CredentialCreate, "sec
     models: parseList(draft.models),
     rpm_limit: optionalNumber(draft.rpm),
     enabled: draft.enabled,
+    headers: headerMap(draft.headers),
   };
 }

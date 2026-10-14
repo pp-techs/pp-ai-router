@@ -896,12 +896,14 @@ function callOf(
     stream?: boolean;
     baseUrl?: string;
     body?: Record<string, unknown>;
+    headers?: Record<string, string>;
   } = {},
 ) {
   return adapter.call({
     baseUrl: input.baseUrl ?? adapter.defaultBaseUrl!,
     token: input.token ?? "access-token",
     meta: input.meta ?? { authType: "aws_sso_oidc" },
+    headers: input.headers ?? {},
     body: input.body ?? { model: "claude-sonnet-4-5", messages: [{ role: "user", content: "hi" }] },
     stream: input.stream ?? false,
     signal: new AbortController().signal,

@@ -16,6 +16,8 @@ The adapted adapters keep opencodex's wire knowledge but target this repo's chat
 
 Optional adapter members: `oauth` (enables login + refresh), `staticModels` (wins over `listModels`), `quota` (account allowance: Kiro, Antigravity and Anthropic Subscription), `defaultBaseUrl` (null = `base_url` mandatory).
 
+Every upstream request carries `UpstreamCall.headers` (also on `ModelListCall` and `QuotaCall`): the provider's custom headers with the chosen credential's overrides on top, merged by `mergeHeaders` (`upstream-headers.ts`). An adapter applies them last, so a name it sets itself (e.g. `authorization`) can be overridden on purpose; the admin API refuses the names that frame the request or the connection (`host`, `content-length`, hop-by-hop ones).
+
 `anthropic` and `anthropic-subscription` share one Messages translation, `createAnthropicAdapter(flavor)` in `providers/anthropic.ts`. A flavor supplies the credential headers (given the account's `meta`), may serialise and rewrite the translated request (`prepare`, which returns the body bytes and any headers that depend on them), set the Messages URL query (`messagesQuery`), name a 4xx rejection worth one resend (`retryRejection`), and rewrite each answer chunk (`restore`); the subscription flavor uses these for the Claude Code billing block and its `cch` signature, the identity blocks, `metadata.user_id`, `_` tool-name wrapping and the "Claude Code too old" version adoption.
 
 ## Registry and pool

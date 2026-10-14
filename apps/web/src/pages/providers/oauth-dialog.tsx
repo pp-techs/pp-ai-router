@@ -89,6 +89,7 @@ function OAuthBody({
         onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
         labelRequired={false}
         showEnabled={false}
+        showHeaders={false}
       />
       <FormError error={begin.error} />
       <DialogFooter>

@@ -3,6 +3,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { CredentialDraft } from "@/lib/credential-draft";
+import { HeaderFields } from "./header-fields";
 
 /** Shared by the add-key, edit and OAuth-login dialogs. */
 export function CredentialFields({
@@ -10,11 +11,13 @@ export function CredentialFields({
   onChange,
   labelRequired = true,
   showEnabled = true,
+  showHeaders = true,
 }: {
   draft: CredentialDraft;
   onChange: (patch: Partial<CredentialDraft>) => void;
   labelRequired?: boolean;
   showEnabled?: boolean;
+  showHeaders?: boolean;
 }) {
   return (
     <>
@@ -77,6 +80,13 @@ export function CredentialFields({
           />
           Enabled
         </Label>
+      )}
+      {showHeaders && (
+        <HeaderFields
+          rows={draft.headers}
+          onChange={(headers) => onChange({ headers })}
+          hint="Sent with every request this key makes, on top of the provider's own headers: a name both set takes this value."
+        />
       )}
     </>
   );

@@ -33,23 +33,23 @@ pp-ai-router/
 
 ## Server modules (`apps/server/src/`)
 
-| Path                          | Responsibility                                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `config.ts`                   | Zod-validated env                                                                                             |
-| `errors.ts`                   | `HttpError`, OpenAI-style `errorBody`                                                                         |
-| `crypto.ts`, `credentials.ts` | `SecretBox` AES-256-GCM; seal/open credential auth                                                            |
-| `db/`                         | `database.ts` (open, `transaction`, `one`, `all`), `migrate.ts`, `migrations/*.sql`                           |
-| `registry.ts`                 | In-memory providers/credentials/aliases/disabled-models snapshot, alias/`provider/model` resolution           |
-| `pool/`                       | `pool.ts` leases and cooldowns, `selectors.ts` strategies, `recent-usage.ts`                                  |
-| `gateway/`                    | `chat.ts` shared pipeline + `/v1/chat/completions`, `messages.ts` `/v1/messages`, `accounting.ts`, `usage.ts` |
-| `governance/`                 | `virtual-keys.ts` (keys, model globs), `limits.ts` (`UsageMeter`, windows)                                    |
-| `pricing/`                    | `store.ts`, `cost.ts`, `sync.ts`, `litellm.ts`, `openrouter.ts`, `types.ts`                                   |
-| `oauth/`                      | `types.ts`, `login-sessions.ts`, `token-manager.ts`, `paste.ts` (PKCE, pasted redirect parsing)               |
-| `models.ts`                   | `ModelCatalog` stored model lists + sync scheduler                                                            |
-| `quota/`                      | `service.ts` (`QuotaService`: cache, probes, pool parking, sync), `types.ts`, `wire.ts` (parsing helpers)     |
-| `admin/routes.ts`             | `/admin/*` API behind `ADMIN_TOKEN`                                                                           |
-| `providers/`                  | Adapters (see below)                                                                                          |
-| `glob.ts`, `logger.ts`        | Glob matching for model patterns, structured logger                                                           |
+| Path                                          | Responsibility                                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `config.ts`                                   | Zod-validated env                                                                                             |
+| `errors.ts`                                   | `HttpError`, OpenAI-style `errorBody`                                                                         |
+| `crypto.ts`, `credentials.ts`                 | `SecretBox` AES-256-GCM; seal/open credential auth                                                            |
+| `db/`                                         | `database.ts` (open, `transaction`, `one`, `all`), `migrate.ts`, `migrations/*.sql`                           |
+| `registry.ts`                                 | In-memory providers/credentials/aliases/disabled-models snapshot, alias/`provider/model` resolution           |
+| `pool/`                                       | `pool.ts` leases and cooldowns, `selectors.ts` strategies, `recent-usage.ts`                                  |
+| `gateway/`                                    | `chat.ts` shared pipeline + `/v1/chat/completions`, `messages.ts` `/v1/messages`, `accounting.ts`, `usage.ts` |
+| `governance/`                                 | `virtual-keys.ts` (keys, model globs), `limits.ts` (`UsageMeter`, windows)                                    |
+| `pricing/`                                    | `store.ts`, `cost.ts`, `sync.ts`, `litellm.ts`, `openrouter.ts`, `types.ts`                                   |
+| `oauth/`                                      | `types.ts`, `login-sessions.ts`, `token-manager.ts`, `paste.ts` (PKCE, pasted redirect parsing)               |
+| `models.ts`                                   | `ModelCatalog` stored model lists + sync scheduler                                                            |
+| `quota/`                                      | `service.ts` (`QuotaService`: cache, probes, pool parking, sync), `types.ts`, `wire.ts` (parsing helpers)     |
+| `admin/routes.ts`                             | `/admin/*` API behind `ADMIN_TOKEN`                                                                           |
+| `providers/`                                  | Adapters (see below)                                                                                          |
+| `glob.ts`, `upstream-headers.ts`, `logger.ts` | Glob matching for model patterns, custom upstream headers (merge + admin-API schema), structured logger       |
 
 ### `providers/`
 

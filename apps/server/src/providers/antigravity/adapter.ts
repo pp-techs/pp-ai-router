@@ -26,7 +26,7 @@ export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter 
     staticModels: ANTIGRAVITY_MODELS,
     quota: (input) => fetchAntigravityQuota(input, doFetch),
 
-    async call({ baseUrl, token, meta, body, stream, signal }) {
+    async call({ baseUrl, token, meta, headers, body, stream, signal }) {
       const project = meta[PROJECT_KEY];
       if (!project) {
         throw new Error("Antigravity account has no Cloud Code Assist project: sign in again");
@@ -43,7 +43,12 @@ export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter 
       }
 
       const send = (requestBody: string) =>
-        doFetch(built.url, { method: "POST", headers: built.headers, body: requestBody, signal });
+        doFetch(built.url, {
+          method: "POST",
+          headers: { ...built.headers, ...headers },
+          body: requestBody,
+          signal,
+        });
       let res = await send(built.body);
       if (res.status === 400) {
         // A 400 that blames the tool schemas or the thinking config is replayed once with those

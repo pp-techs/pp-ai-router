@@ -102,7 +102,7 @@ export function createKiroAdapter(options: KiroOAuthOptions = {}): ProviderAdapt
     oauth: createKiroOAuth(options),
     staticModels: KIRO_MODELS,
     quota: (input) => fetchKiroQuota(input, doFetch),
-    async call({ baseUrl, token, meta, body, stream, signal }) {
+    async call({ baseUrl, token, meta, headers, body, stream, signal }) {
       const identity = resolveIdentity(token, meta);
       let built;
       try {
@@ -114,7 +114,7 @@ export function createKiroAdapter(options: KiroOAuthOptions = {}): ProviderAdapt
 
       const res = await send(
         runtimeEndpoint(baseUrl, resolveApiRegion(meta)),
-        requestHeaders(token, identity),
+        { ...requestHeaders(token, identity), ...headers },
         JSON.stringify(built.payload),
         signal,
       );

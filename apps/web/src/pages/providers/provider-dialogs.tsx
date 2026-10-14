@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { headerMap, headerRows } from "@/lib/headers";
 import { ProviderSettingsFields, type ProviderSettingsDraft } from "./provider-fields";
 
 const ID_PATTERN = "[a-z0-9][a-z0-9_\\-]{0,62}";
@@ -50,6 +51,7 @@ function CreateProviderForm({ onDone, onCancel }: { onDone: () => void; onCancel
     sticky_ttl_sec: "0",
     max_key_attempts: "3",
     enabled: true,
+    headers: [],
   });
 
   const selected = types.data?.find((t) => t.type === typeChoice) ?? types.data?.[0];
@@ -77,6 +79,7 @@ function CreateProviderForm({ onDone, onCancel }: { onDone: () => void; onCancel
       sticky_ttl_sec: Number(settings.sticky_ttl_sec),
       max_key_attempts: Number(settings.max_key_attempts),
       enabled: settings.enabled,
+      headers: headerMap(settings.headers),
     });
   }
 
@@ -160,6 +163,7 @@ function EditProviderForm({
     sticky_ttl_sec: String(provider.sticky_ttl_sec),
     max_key_attempts: String(provider.max_key_attempts),
     enabled: provider.enabled,
+    headers: headerRows(provider.headers),
   });
   const update = useAction(
     (draft: ProviderSettingsDraft) =>
@@ -169,6 +173,7 @@ function EditProviderForm({
         sticky_ttl_sec: Number(draft.sticky_ttl_sec),
         max_key_attempts: Number(draft.max_key_attempts),
         enabled: draft.enabled,
+        headers: headerMap(draft.headers),
       }),
     {
       invalidate: [qk.providers],

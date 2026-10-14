@@ -93,7 +93,7 @@ export function parseKiroUsage(body: unknown): Quota | null {
  * past and dropped, so nothing identifying reaches the cache, the admin API or a log line.
  */
 export async function fetchKiroQuota(
-  { baseUrl, token, meta, signal }: QuotaCall,
+  { baseUrl, token, meta, headers, signal }: QuotaCall,
   doFetch: typeof fetch,
 ): Promise<Quota> {
   const { profileArn } = resolveIdentity(token, meta);
@@ -116,6 +116,7 @@ export async function fetchKiroQuota(
       accept: "application/json",
       "x-amz-target": AMZ_USAGE_TARGET,
       "x-amzn-codewhisperer-optout": "true",
+      ...headers,
     },
     body: JSON.stringify({ origin: "AI_EDITOR", isEmailRequired: true, profileArn }),
     signal,

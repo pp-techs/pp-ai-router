@@ -67,5 +67,7 @@ export interface QuotaCall {
   baseUrl: string;
   token: string;
   meta: Readonly<Record<string, string>>;
+  /** Custom headers of the provider and the account, merged (see `upstream-headers.ts`). */
+  headers: Readonly<Record<string, string>>;
   signal: AbortSignal;
 }

@@ -75,7 +75,7 @@ function AliasForm({
         {targets.map((t, i) => (
           <div
             key={i}
-            className="grid grid-cols-[5rem_1fr_1.4fr_auto] items-center gap-2 rounded-lg border border-border bg-muted/30 p-2"
+            className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-muted/30 p-2 sm:grid-cols-[5rem_minmax(0,1fr)_minmax(0,1.4fr)_auto] sm:items-center"
           >
             <StatusBadge tone={i === 0 ? "accent" : "neutral"}>
               {i === 0 ? "primary" : `fallback ${i}`}

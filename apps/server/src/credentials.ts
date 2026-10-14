@@ -24,14 +24,15 @@ export interface NewCredential {
   models?: string[] | null;
   rpmLimit?: number | null;
   enabled?: boolean;
+  headers?: Record<string, string>;
 }
 
 /** Inserts a credential row and returns its id. The caller reloads the registry. */
 export function insertCredential(db: Db, box: SecretBox, c: NewCredential, now: number): string {
   const id = randomUUID();
   db.prepare(
-    `INSERT INTO credentials (id, provider_id, label, kind, secret_enc, weight, priority, models, rpm_limit, enabled, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO credentials (id, provider_id, label, kind, secret_enc, weight, priority, models, rpm_limit, enabled, headers, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     c.providerId,
@@ -43,6 +44,7 @@ export function insertCredential(db: Db, box: SecretBox, c: NewCredential, now: 
     c.models ? JSON.stringify(c.models) : null,
     c.rpmLimit ?? null,
     c.enabled === false ? 0 : 1,
+    JSON.stringify(c.headers ?? {}),
     now,
   );
   return id;

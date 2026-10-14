@@ -41,6 +41,8 @@ export interface Provider {
   enabled: boolean;
   credentials: number;
   oauth: boolean;
+  /** Headers added to every upstream request of this provider. */
+  headers: Record<string, string>;
 }
 
 export interface ProviderCreate {
@@ -51,6 +53,7 @@ export interface ProviderCreate {
   sticky_ttl_sec: number;
   max_key_attempts: number;
   enabled: boolean;
+  headers: Record<string, string>;
 }
 
 export type ProviderPatch = Partial<Omit<ProviderCreate, "id" | "type">>;
@@ -73,6 +76,8 @@ export interface Credential {
   inflight: number;
   fail_count: number;
   cooldown_until: number | null;
+  /** This credential's overrides of the provider's custom headers. */
+  headers: Record<string, string>;
 }
 
 export interface CredentialCreate {
@@ -83,6 +88,7 @@ export interface CredentialCreate {
   models: string[] | null;
   rpm_limit: number | null;
   enabled: boolean;
+  headers: Record<string, string>;
 }
 
 export interface CredentialPatch {
@@ -94,6 +100,7 @@ export interface CredentialPatch {
   rpm_limit?: number | null;
   enabled?: boolean;
   status?: "active";
+  headers?: Record<string, string>;
 }
 
 /** Optional settings applied to the credential an OAuth login creates. */

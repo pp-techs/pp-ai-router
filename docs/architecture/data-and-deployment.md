@@ -2,11 +2,11 @@
 
 ## Storage
 
-One SQLite file (`node:sqlite`, WAL, `foreign_keys=ON`, `STRICT` tables). `db/migrate.ts` applies `src/db/migrations/NNN_name.sql` files above `PRAGMA user_version`, each in its own transaction. Current migrations: `001_init.sql`, `002_provider_models.sql`.
+One SQLite file (`node:sqlite`, WAL, `foreign_keys=ON`, `STRICT` tables). `db/migrate.ts` applies `src/db/migrations/NNN_name.sql` files above `PRAGMA user_version`, each in its own transaction. Current migrations: `001_init.sql` through `007_upstream_headers.sql` (`ls src/db/migrations`).
 
 | Table(s)                                                  | Holds                                                                                              |
 | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `providers`, `credentials`, `model_aliases`               | Routing config; secrets in `credentials.secret_enc` (AES-256-GCM)                                  |
+| `providers`, `credentials`, `model_aliases`               | Routing config, incl. custom upstream `headers`; secrets in `credentials.secret_enc` (AES-256-GCM) |
 | `provider_models`, `provider_model_sync`                  | Stored model lists and last sync outcome per provider                                              |
 | `model_metadata`                                          | Model facts from external catalogs (OpenRouter), merged into model lists at read time              |
 | `disabled_models`                                         | `provider/model` pairs an operator switched off (kept apart: model lists are rewritten on refresh) |

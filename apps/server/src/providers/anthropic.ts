@@ -104,7 +104,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
     ...(flavor.quota ? { quota: flavor.quota } : {}),
     ...(flavor.modelScope ? { modelScope: flavor.modelScope } : {}),
     /** `GET /models`, newest first, paginated with `after_id` until `has_more` is false. */
-    async listModels({ baseUrl, token, meta, signal }) {
+    async listModels({ baseUrl, token, meta, headers, signal }) {
       const models: ModelInfo[] = [];
       let afterId: string | null = null;
       for (let page = 0; page < 20 && models.length < MAX_MODELS; page++) {
@@ -115,6 +115,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
           headers: {
             ...flavor.headers(token, "models", meta),
             "anthropic-version": ANTHROPIC_VERSION,
+            ...headers,
           },
           signal,
         });
@@ -131,7 +132,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
       }
       return models.slice(0, MAX_MODELS);
     },
-    async call({ baseUrl, token, meta, body, stream, signal, observe }) {
+    async call({ baseUrl, token, meta, headers, body, stream, signal, observe }) {
       let payload: Record<string, unknown>;
       try {
         payload = toAnthropicRequest(body, stream);
@@ -154,6 +155,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
             ...flavor.headers(token, "messages", meta),
             ...prepared.headers,
             "anthropic-version": ANTHROPIC_VERSION,
+            ...headers,
           },
           body: prepared.body,
           signal,

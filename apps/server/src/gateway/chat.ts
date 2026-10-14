@@ -19,6 +19,7 @@ import {
   type TokenManager,
 } from "../oauth/token-manager.ts";
 import type { Registry, Target } from "../registry.ts";
+import { mergeHeaders } from "../upstream-headers.ts";
 import type { Db } from "../db/database.ts";
 import type { Accounting, EventStatus } from "./accounting.ts";
 import { parseOpenAiUsage, tapStream } from "./usage.ts";
@@ -210,6 +211,7 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
               baseUrl: provider.baseUrl,
               token: auth.token,
               meta: auth.meta,
+              headers: mergeHeaders(provider.headers, lease.credential.headers),
               body: upstreamBody,
               stream,
               signal: AbortSignal.any([timeout.signal, c.req.raw.signal]),

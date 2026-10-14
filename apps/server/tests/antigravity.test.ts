@@ -1084,6 +1084,7 @@ describe("adapter.call", () => {
         baseUrl: adapter.defaultBaseUrl!,
         token: "tok",
         meta: { project_id: "proj-1" },
+        headers: {},
         body: { model: "gemini-3.8-flash", messages: [{ role: "user", content: "hi" }] },
         stream: false,
         signal: new AbortController().signal,

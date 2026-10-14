@@ -10,6 +10,8 @@ export const ADMIN_TOKEN = "admin-token-for-tests-only";
 export interface UpstreamCall {
   /** Bearer secret the router presented. */
   secret: string;
+  /** Every header the router sent, lower-cased. */
+  headers: Record<string, string>;
   body: Record<string, any>;
 }
 
@@ -22,6 +24,7 @@ export async function startUpstream(handler: UpstreamHandler) {
   app.post("/v1/chat/completions", async (c) => {
     const call: UpstreamCall = {
       secret: (c.req.header("authorization") ?? "").replace(/^Bearer /, ""),
+      headers: Object.fromEntries(c.req.raw.headers),
       body: await c.req.json(),
     };
     calls.push(call);
@@ -134,6 +137,7 @@ export async function startAnthropicUpstream(handler: AnthropicUpstreamHandler) 
     const call: AnthropicUpstreamCall = {
       secret: c.req.header("x-api-key") ?? "",
       version: c.req.header("anthropic-version") ?? "",
+      headers: Object.fromEntries(c.req.raw.headers),
       body: await c.req.json(),
     };
     calls.push(call);

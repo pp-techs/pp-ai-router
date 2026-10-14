@@ -3,6 +3,7 @@ import type { SecretBox } from "./crypto.ts";
 import { all, type Db } from "./db/database.ts";
 import type { CredentialAuth, OAuthTokens } from "./oauth/types.ts";
 import { createSelector, type KeySelector, type Strategy } from "./pool/selectors.ts";
+import { parseHeaders } from "./upstream-headers.ts";
 
 export interface CredentialRuntime {
   id: string;
@@ -17,6 +18,8 @@ export interface CredentialRuntime {
   enabled: boolean;
   status: "active" | "dead";
   lastError: string | null;
+  /** Overrides of the provider's custom headers, by header name. */
+  headers: Record<string, string>;
 }
 
 export interface ProviderRuntime {
@@ -29,6 +32,8 @@ export interface ProviderRuntime {
   enabled: boolean;
   selector: KeySelector;
   credentials: CredentialRuntime[];
+  /** Extra headers every request to this provider carries. */
+  headers: Record<string, string>;
 }
 
 export interface Target {
@@ -44,6 +49,7 @@ interface ProviderRow {
   sticky_ttl_sec: number;
   max_key_attempts: number;
   enabled: number;
+  headers: string;
 }
 
 interface CredentialRow {
@@ -59,6 +65,7 @@ interface CredentialRow {
   enabled: number;
   status: "active" | "dead";
   last_error: string | null;
+  headers: string;
 }
 
 /**
@@ -100,6 +107,7 @@ export class Registry {
         enabled: r.enabled === 1,
         status: r.status,
         lastError: r.last_error,
+        headers: parseHeaders(r.headers),
       });
       credentials.set(r.provider_id, list);
     }
@@ -121,6 +129,7 @@ export class Registry {
         enabled: r.enabled === 1,
         selector: entry.selector,
         credentials: credentials.get(r.id) ?? [],
+        headers: parseHeaders(r.headers),
       });
     }
     for (const id of this.#selectors.keys()) if (!providers.has(id)) this.#selectors.delete(id);

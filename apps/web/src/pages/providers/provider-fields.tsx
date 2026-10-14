@@ -4,6 +4,8 @@ import { OptionSelect } from "@/components/option-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { HeaderRow } from "@/lib/headers";
+import { HeaderFields } from "./header-fields";
 
 export type ProviderSettingsDraft = {
   base_url: string;
@@ -11,6 +13,7 @@ export type ProviderSettingsDraft = {
   sticky_ttl_sec: string;
   max_key_attempts: string;
   enabled: boolean;
+  headers: HeaderRow[];
 };
 
 const STRATEGY_HINTS: Record<Strategy, string> = {
@@ -93,6 +96,11 @@ export function ProviderSettingsFields({
         />
         Enabled
       </Label>
+      <HeaderFields
+        rows={draft.headers}
+        onChange={(headers) => onChange({ headers })}
+        hint="Sent with every request to this upstream. Reserved ones (host, content-length, …) are refused; values are stored unencrypted."
+      />
     </>
   );
 }

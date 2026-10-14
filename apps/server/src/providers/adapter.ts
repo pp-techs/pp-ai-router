@@ -13,6 +13,11 @@ export interface UpstreamCall {
   token: string;
   /** Provider-specific extras stored with an OAuth account (project id, profile ARN, ...). Empty for API keys. */
   meta: Readonly<Record<string, string>>;
+  /**
+   * Custom headers of the provider and the chosen credential merged (see `upstream-headers.ts`).
+   * They go out on top of the adapter's own headers, so a name both set takes the custom value.
+   */
+  headers: Readonly<Record<string, string>>;
   /** OpenAI chat-completions body with `model` already rewritten to the upstream model. */
   body: Record<string, unknown>;
   /** Whether the client asked for SSE. */
@@ -46,7 +51,7 @@ export interface ModelInfo extends ModelDetails {
   sources?: Partial<Record<keyof ModelDetails, string>>;
 }
 
-export type ModelListCall = Pick<UpstreamCall, "baseUrl" | "token" | "meta" | "signal">;
+export type ModelListCall = Pick<UpstreamCall, "baseUrl" | "token" | "meta" | "headers" | "signal">;
 /**
  * An adapter turns the canonical OpenAI chat-completions request into one upstream call and returns
  * a `Response` in OpenAI chat-completions shape: JSON when `stream` is false, SSE when true (usage in

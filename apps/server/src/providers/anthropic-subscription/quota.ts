@@ -156,7 +156,7 @@ export function parseRateLimitHeaders(headers: Headers): Quota | null {
 
 /** One account's usage, read with that account's own token. */
 export async function fetchAnthropicQuota(
-  { baseUrl, token, signal }: QuotaCall,
+  { baseUrl, token, headers, signal }: QuotaCall,
   doFetch: typeof fetch,
 ): Promise<Quota> {
   let res: Response;
@@ -168,6 +168,7 @@ export async function fetchAnthropicQuota(
         "user-agent": cliUserAgent(),
         "anthropic-beta": USAGE_BETA,
         authorization: `Bearer ${token}`,
+        ...headers,
       },
       signal,
     });

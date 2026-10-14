@@ -28,6 +28,7 @@ import type { QuotaService, QuotaStatus } from "../quota/service.ts";
 import type { Registry } from "../registry.ts";
 import type { Logger } from "../logger.ts";
 import type { AuditLogStore } from "../audit/store.ts";
+import { customHeaders } from "../upstream-headers.ts";
 
 export interface AdminDeps {
   adminToken: string;
@@ -63,8 +64,16 @@ const providerCreate = z.strictObject({
   sticky_ttl_sec: z.number().int().min(0).max(86_400).default(0),
   max_key_attempts: z.number().int().min(1).max(20).default(3),
   enabled: z.boolean().default(true),
+  headers: customHeaders.default({}),
 });
-const providerPatch = providerCreate.omit({ id: true, type: true }).partial().strict();
+const providerPatch = z.strictObject({
+  base_url: httpUrl.optional(),
+  key_strategy: z.enum(STRATEGIES).optional(),
+  sticky_ttl_sec: z.number().int().min(0).max(86_400).optional(),
+  max_key_attempts: z.number().int().min(1).max(20).optional(),
+  enabled: z.boolean().optional(),
+  headers: customHeaders.optional(),
+});
 
 const credentialFields = {
   label: z.string().min(1).max(100),
@@ -73,6 +82,7 @@ const credentialFields = {
   models: globs,
   rpm_limit: z.number().int().min(1).nullable(),
   enabled: z.boolean(),
+  headers: customHeaders,
 };
 const credentialCreate = z.strictObject({
   kind: z.literal("api_key").default("api_key"),
@@ -83,6 +93,7 @@ const credentialCreate = z.strictObject({
   models: credentialFields.models.default(null),
   rpm_limit: credentialFields.rpm_limit.default(null),
   enabled: credentialFields.enabled.default(true),
+  headers: credentialFields.headers.default({}),
 });
 const credentialPatch = z
   .strictObject({ ...credentialFields, secret: z.string().min(1), status: z.literal("active") })
@@ -257,6 +268,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
         enabled: p.enabled,
         credentials: p.credentials.length,
         oauth: Boolean(adapters[p.type]?.oauth),
+        headers: p.headers,
       })),
     }),
   );
@@ -289,8 +301,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
     if (registry.provider(b.id))
       throw new HttpError(409, "conflict", `Provider "${b.id}" already exists.`);
     db.prepare(
-      `INSERT INTO providers (id, type, base_url, key_strategy, sticky_ttl_sec, max_key_attempts, enabled, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO providers (id, type, base_url, key_strategy, sticky_ttl_sec, max_key_attempts, enabled, headers, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       b.id,
       b.type,
@@ -299,6 +311,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
       b.sticky_ttl_sec,
       b.max_key_attempts,
       b.enabled ? 1 : 0,
+      JSON.stringify(b.headers),
       now(),
     );
     registry.reload();
@@ -311,7 +324,13 @@ export function createAdminApp(deps: AdminDeps): Hono {
       status: "success",
       statusCode: 201,
       ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      details: { type: b.type, base_url: baseUrl, key_strategy: b.key_strategy },
+      // Only the header names: a value may be a credential of its own.
+      details: {
+        type: b.type,
+        base_url: baseUrl,
+        key_strategy: b.key_strategy,
+        headers: Object.keys(b.headers),
+      },
     });
     return c.json({ id: b.id }, 201);
   });
@@ -322,16 +341,19 @@ export function createAdminApp(deps: AdminDeps): Hono {
     if (!current) throw notFound("Provider");
     const b = await parse(c, providerPatch);
     db.prepare(
-      "UPDATE providers SET base_url = ?, key_strategy = ?, sticky_ttl_sec = ?, max_key_attempts = ?, enabled = ? WHERE id = ?",
+      "UPDATE providers SET base_url = ?, key_strategy = ?, sticky_ttl_sec = ?, max_key_attempts = ?, enabled = ?, headers = ? WHERE id = ?",
     ).run(
       b.base_url ?? current.baseUrl,
       b.key_strategy ?? current.strategy,
       b.sticky_ttl_sec ?? current.stickyTtlMs / 1000,
       b.max_key_attempts ?? current.maxKeyAttempts,
       (b.enabled ?? current.enabled) ? 1 : 0,
+      JSON.stringify(b.headers ?? current.headers),
       id,
     );
     registry.reload();
+    // Header values are left out of the audit trail: one may be a credential of its own.
+    const { headers, ...audited } = b;
     audit?.record({
       category: "admin",
       action: "provider.update",
@@ -341,7 +363,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
       status: "success",
       statusCode: 200,
       ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
-      details: b,
+      details: { ...audited, ...(headers !== undefined && { headers: Object.keys(headers) }) },
     });
     return c.json({ id });
   });
@@ -382,6 +404,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
       models: cred.models,
       rpm_limit: cred.rpmLimit,
       enabled: cred.enabled,
+      headers: cred.headers,
       status: cred.status,
       last_error: cred.lastError,
       inflight: live.inflight,
@@ -560,6 +583,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
         models: b.models,
         rpmLimit: b.rpm_limit,
         enabled: b.enabled,
+        headers: b.headers,
       },
       now(),
     );
@@ -598,6 +622,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
     if (b.models !== undefined) columns.set("models", b.models && JSON.stringify(b.models));
     if (b.rpm_limit !== undefined) columns.set("rpm_limit", b.rpm_limit);
     if (b.enabled !== undefined) columns.set("enabled", b.enabled ? 1 : 0);
+    if (b.headers !== undefined) columns.set("headers", JSON.stringify(b.headers));
     if (b.secret !== undefined || b.status === "active") {
       // A replaced secret (or an explicit revive) puts a dead credential back in rotation.
       columns.set("status", "active");
@@ -623,6 +648,8 @@ export function createAdminApp(deps: AdminDeps): Hono {
         priority: b.priority,
         enabled: b.enabled,
         has_new_secret: b.secret !== undefined,
+        // Only the names: a header value may be a credential of its own.
+        ...(b.headers !== undefined && { headers: Object.keys(b.headers) }),
       },
     });
     return c.json({ id });

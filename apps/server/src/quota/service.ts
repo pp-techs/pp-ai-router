@@ -3,6 +3,7 @@ import { CredentialUnavailableError, type TokenManager } from "../oauth/token-ma
 import type { CredentialPool } from "../pool/pool.ts";
 import type { ProviderAdapter } from "../providers/adapter.ts";
 import type { CredentialRuntime, ProviderRuntime, Registry } from "../registry.ts";
+import { mergeHeaders } from "../upstream-headers.ts";
 import { QuotaError, type Quota, type QuotaFailure, type QuotaWindow } from "./types.ts";
 import { QUOTA_TIMEOUT_MS, failureForError } from "./wire.ts";
 
@@ -216,6 +217,7 @@ export class QuotaService {
         baseUrl: provider.baseUrl,
         token: auth.token,
         meta: auth.meta,
+        headers: mergeHeaders(provider.headers, credential.headers),
         signal: AbortSignal.timeout(QUOTA_TIMEOUT_MS),
       });
 

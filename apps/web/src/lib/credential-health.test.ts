@@ -21,6 +21,7 @@ const cred = (patch: Partial<Credential> = {}): Credential => ({
   inflight: 0,
   fail_count: 0,
   cooldown_until: null,
+  headers: {},
   ...patch,
 });
 
