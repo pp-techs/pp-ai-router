@@ -32,6 +32,8 @@ GET|POST   /admin/providers/:id/credentials     PATCH|DELETE /admin/credentials/
 GET        /admin/providers/:id/models          POST /admin/providers/:id/models/refresh
 GET        /admin/models                        PATCH /admin/models/:provider/:model   {enabled}
 PATCH      /admin/models/:provider              {enabled, models?}   (bulk; no models = whole list)
+PUT|DELETE /admin/models/:provider/:model       (custom model: name, description, created, context_window, max_output_tokens, input_modalities, output_modalities, supported_parameters)
+POST       /admin/model-tests                   {provider, model}   (one tiny request; stores last_test)
 GET        /admin/providers/:id/quota[?refresh=true]    GET /admin/credentials/:id/quota[?refresh=true]
 GET        /admin/aliases              PUT|DELETE   /admin/aliases/:alias
 GET|POST   /admin/keys                 GET|PATCH|DELETE /admin/keys/:id

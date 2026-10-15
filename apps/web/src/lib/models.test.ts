@@ -14,7 +14,9 @@ const model = (id: string, name: string | null = null, enabled = true): Provider
   supported_parameters: null,
   sources: null,
   enabled,
+  custom: false,
   price: null,
+  last_test: null,
 });
 const LIST = [
   model("gpt-4o"),

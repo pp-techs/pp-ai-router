@@ -3,14 +3,18 @@ import {
   BoxesIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  PlayIcon,
+  PlusIcon,
   RefreshCwIcon,
   SearchIcon,
+  SquareIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { qk, useAction } from "@/api/queries";
-import type { Provider, ProviderModelGroup } from "@/api/types";
+import type { Price, Provider, ProviderModelGroup } from "@/api/types";
+import { ConfirmModal } from "@/components/confirm-modal";
 import { OptionSelect } from "@/components/option-select";
 import { Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
@@ -24,8 +28,13 @@ import { formatDateTime, formatInt } from "@/lib/format";
 import { filterGroups, flattenGroups, type ModelRow, type StatusFilter } from "@/lib/models";
 import { toast } from "@/lib/toast";
 import { AliasModal } from "../alias-dialog";
-import { ModelTable } from "./model-table";
+import { OverrideModal } from "../pricing/override-dialog";
+import { CustomModelModal } from "./custom-model-dialog";
+import { ModelTable, type ModelTableProps } from "./model-table";
+import { useModelTests } from "./use-model-tests";
 
+/** More tests than this ask for confirmation first. */
+const CONFIRM_TESTS_ABOVE = 10;
 /** Rows rendered at once per list: a provider can offer thousands of models. */
 const PAGE = 50;
 /** Key of the single list in flat mode. */
@@ -78,14 +87,16 @@ interface ResultsProps {
   status: StatusFilter;
   grouping: Grouping;
   providers: Provider[] | undefined;
-  pending: string | null;
+  /** What every model table needs besides its rows: switches, tests, row actions. */
+  rowProps: Omit<ModelTableProps, "rows" | "showProvider" | "onCreateAlias">;
   refreshing: string | null;
   /** The provider whose bulk switch is being saved. */
   bulkPending: string | null;
-  onToggle: (row: ModelRow, enabled: boolean) => void;
   onRefresh: (provider: string) => void;
   /** `ids` absent = the provider's whole list. */
   onBulk: (provider: string, enabled: boolean, ids?: string[]) => void;
+  onAddModel: (provider: string) => void;
+  onTestRows: (rows: ModelRow[]) => void;
 }
 
 function Results({
@@ -94,12 +105,13 @@ function Results({
   status,
   grouping,
   providers,
-  pending,
+  rowProps,
   refreshing,
   bulkPending,
-  onToggle,
   onRefresh,
   onBulk,
+  onAddModel,
+  onTestRows,
 }: ResultsProps) {
   const [shown, setShown] = useState<Record<string, number>>({});
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -155,10 +167,9 @@ function Results({
         <div className="mb-4">{summary}</div>
         <Panel flush>
           <ModelTable
+            {...rowProps}
             rows={rows.slice(0, limit(FLAT))}
             showProvider
-            pending={pending}
-            onToggle={onToggle}
             onCreateAlias={createAlias}
           />
           <ShowMore shown={limit(FLAT)} total={rows.length} onMore={() => more(FLAT)} />
@@ -192,6 +203,8 @@ function Results({
           // With a filter on, the bulk buttons act on the models shown, otherwise on the whole list.
           const scope = filtering ? "shown" : "all";
           const bulkIds = filtering ? group.data.map((m) => m.id) : undefined;
+          // Enabled models only: switching a model off is how you keep it out of a test run.
+          const testable = rows.filter((r) => r.model.enabled);
           return (
             <Panel
               key={group.provider}
@@ -221,6 +234,19 @@ function Results({
               description={describeGroup(full)}
               actions={
                 <>
+                  <Button size="sm" variant="outline" onClick={() => onAddModel(group.provider)}>
+                    <PlusIcon data-icon="inline-start" />
+                    Add model
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={rowProps.testBusy || testable.length === 0}
+                    onClick={() => onTestRows(testable)}
+                  >
+                    <PlayIcon data-icon="inline-start" />
+                    Test {scope}
+                  </Button>
                   {group.data.some((m) => m.enabled) && (
                     <Button
                       size="sm"
@@ -279,10 +305,9 @@ function Results({
               ) : (
                 <>
                   <ModelTable
+                    {...rowProps}
                     rows={rows.slice(0, limit(group.provider))}
                     showProvider={false}
-                    pending={pending}
-                    onToggle={onToggle}
                     onCreateAlias={createAlias}
                   />
                   <ShowMore
@@ -358,6 +383,81 @@ export function ModelsTab() {
     ? `${toggle.variables.row.provider}/${toggle.variables.row.model.id}`
     : null;
 
+  const tests = useModelTests();
+  const providerNames = (groups.data ?? []).map((g) => g.provider);
+  // What the toolbar's test button covers: every enabled model the current filter shows.
+  const shownGroups = filterGroups(groups.data ?? [], search, status);
+  const filtering = search.trim() !== "" || status !== "all";
+  const testable = flattenGroups(shownGroups).filter((r) => r.model.enabled);
+
+  const addModel = (provider: string | null) =>
+    void CustomModelModal.show({ providers: providerNames, provider, model: null });
+
+  const deleteModel = (row: ModelRow) =>
+    void ConfirmModal.show({
+      title: `Delete ${row.provider}/${row.model.id}?`,
+      message:
+        "The custom model leaves the list. Requests that name it directly still reach the provider.",
+      confirmLabel: "Delete model",
+      action: async () => {
+        await api.deleteCustomModel(row.provider, row.model.id);
+        await client.invalidateQueries({ queryKey: qk.models });
+        void client.invalidateQueries({ queryKey: qk.providerModels(row.provider) });
+      },
+    });
+
+  /** Opens the price override form for `provider/model`, prefilled with what is known. */
+  async function setPrice(row: ModelRow) {
+    const key = `${row.provider}/${row.model.id}`;
+    const found = await api.priceLookup(key).catch(() => null);
+    const own = found !== null && found.source === "override" && found.model === key;
+    const base: Price = own
+      ? found
+      : {
+          model: key,
+          source: "",
+          input_per_1m: found?.input_per_1m ?? null,
+          output_per_1m: found?.output_per_1m ?? null,
+          cache_read_per_1m: found?.cache_read_per_1m ?? null,
+          cache_write_per_1m: found?.cache_write_per_1m ?? null,
+          reasoning_per_1m: null,
+          tiers: [],
+        };
+    if (await OverrideModal.show({ base })) {
+      void client.invalidateQueries({ queryKey: qk.models });
+    }
+  }
+
+  /** Runs the tests, asking first when it is a lot of requests (each may be billed by the upstream). */
+  function runTests(rows: ModelRow[]) {
+    if (rows.length <= CONFIRM_TESTS_ABOVE) {
+      void tests.start(rows);
+      return;
+    }
+    void ConfirmModal.show({
+      title: `Test ${plural(rows.length, "model")}?`,
+      message:
+        "Each test sends one tiny request through the provider's own credentials, which the upstream may bill. They run a few at a time and you can stop at any point.",
+      confirmLabel: `Run ${formatInt(rows.length)} tests`,
+      destructive: false,
+      action: async () => {
+        void tests.start(rows);
+      },
+    });
+  }
+
+  const rowProps: Omit<ModelTableProps, "rows" | "showProvider" | "onCreateAlias"> = {
+    pending,
+    testing: tests.testing,
+    testBusy: tests.run !== null,
+    onToggle: (row, enabled) => toggle.mutate({ row, enabled }),
+    onTest: (row) => void tests.start([row]),
+    onSetPrice: (row) => void setPrice(row),
+    onEdit: (row) =>
+      void CustomModelModal.show({ providers: providerNames, provider: row.provider, model: row }),
+    onDelete: deleteModel,
+  };
+
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -391,6 +491,34 @@ export function ModelsTab() {
           <ToggleGroupItem value="provider">By provider</ToggleGroupItem>
           <ToggleGroupItem value="flat">Flat list</ToggleGroupItem>
         </ToggleGroup>
+        <Button
+          variant="outline"
+          onClick={() => addModel(null)}
+          disabled={providerNames.length === 0}
+        >
+          <PlusIcon data-icon="inline-start" />
+          Add model
+        </Button>
+        {tests.run ? (
+          <>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              Testing {tests.run.done} / {tests.run.total}
+            </span>
+            <Button variant="outline" onClick={tests.stop}>
+              <SquareIcon data-icon="inline-start" />
+              Stop
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="outline"
+            disabled={testable.length === 0}
+            onClick={() => runTests(testable)}
+          >
+            <PlayIcon data-icon="inline-start" />
+            Test {filtering ? "shown" : "all"}
+          </Button>
+        )}
       </div>
       <QueryBoundary
         query={groups}
@@ -410,12 +538,13 @@ export function ModelsTab() {
             status={status}
             grouping={grouping}
             providers={providers.data}
-            pending={pending}
+            rowProps={rowProps}
             refreshing={refresh.isPending ? (refresh.variables ?? null) : null}
             bulkPending={bulk.isPending ? bulk.variables.provider : null}
-            onToggle={(row, enabled) => toggle.mutate({ row, enabled })}
             onRefresh={(provider) => refresh.mutate(provider)}
             onBulk={(provider, enabled, ids) => bulk.mutate({ provider, enabled, ids })}
+            onAddModel={addModel}
+            onTestRows={runTests}
           />
         )}
       </QueryBoundary>

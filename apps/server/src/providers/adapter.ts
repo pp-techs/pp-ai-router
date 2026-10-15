@@ -49,6 +49,8 @@ export interface ModelInfo extends ModelDetails {
   id: string;
   /** Fields the upstream did not report and a catalog filled in: field name -> source (e.g. `openrouter`). */
   sources?: Partial<Record<keyof ModelDetails, string>>;
+  /** Added by an operator rather than listed by the upstream or the adapter. */
+  custom?: boolean;
 }
 
 export type ModelListCall = Pick<UpstreamCall, "baseUrl" | "token" | "meta" | "headers" | "signal">;

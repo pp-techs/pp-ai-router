@@ -1,6 +1,7 @@
-import { NetworkIcon } from "lucide-react";
+import { BadgeDollarSignIcon, NetworkIcon, PencilIcon, PlayIcon, Trash2Icon } from "lucide-react";
 import { RowActions } from "@/components/row-actions";
 import { StatusBadge } from "@/components/status-badge";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -10,9 +11,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatPer1m } from "@/lib/format";
+import { formatDateTime, formatLatency, formatPer1m } from "@/lib/format";
 import { formatContextWindow, type ModelRow } from "@/lib/models";
-import type { ProviderModel } from "@/api/types";
+import type { ModelTest, ProviderModel } from "@/api/types";
 import { cn } from "@/lib/utils";
 /** "text, image → text": what a model takes in and gives out, when the catalog knows. */
 function modalitySummary(m: ProviderModel): string | null {
@@ -40,22 +41,65 @@ function ModelTags({ model: m }: { model: ProviderModel }) {
     </div>
   );
 }
-export function ModelTable({
-  rows,
-  showProvider,
-  pending,
-  onToggle,
-  onCreateAlias,
-}: {
+/** The last test of a model: a spinner while it runs, else how it went (details on hover). */
+function TestCell({ test, running }: { test: ModelTest | null; running: boolean }) {
+  if (running) return <Spinner />;
+  if (!test) return <span className="text-muted-foreground">—</span>;
+  const when = `Tested ${formatDateTime(test.tested_at)}${test.credential ? ` with ${test.credential}` : ""}`;
+  if (test.ok) {
+    return (
+      <span title={`${when}\nReply: ${test.reply ?? "(no text)"}`} className="whitespace-nowrap">
+        <StatusBadge tone="ok" dot>
+          {formatLatency(test.latency_ms)}
+        </StatusBadge>
+      </span>
+    );
+  }
+  return (
+    <span
+      title={`${when}\n${test.error ?? "Failed"}`}
+      className="flex max-w-56 items-center gap-1.5 whitespace-nowrap"
+    >
+      <StatusBadge tone="danger" dot>
+        {test.status === null ? "failed" : `failed ${test.status}`}
+      </StatusBadge>
+      <span className="truncate text-xs text-muted-foreground">{test.error}</span>
+    </span>
+  );
+}
+
+export interface ModelTableProps {
   rows: ModelRow[];
   /** A Provider column, for lists that mix providers. */
   showProvider: boolean;
   /** The `provider/model` whose switch is being saved. */
   pending: string | null;
+  /** The `provider/model` keys being tested right now. */
+  testing: ReadonlySet<string>;
+  /** A test run is in progress, so a single test has to wait. */
+  testBusy: boolean;
   onToggle: (row: ModelRow, enabled: boolean) => void;
+  onTest: (row: ModelRow) => void;
+  onSetPrice: (row: ModelRow) => void;
+  onEdit: (row: ModelRow) => void;
+  onDelete: (row: ModelRow) => void;
   /** Absent while the provider list the alias form needs is still loading. */
   onCreateAlias: ((row: ModelRow) => void) | undefined;
-}) {
+}
+
+export function ModelTable({
+  rows,
+  showProvider,
+  pending,
+  testing,
+  testBusy,
+  onToggle,
+  onTest,
+  onSetPrice,
+  onEdit,
+  onDelete,
+  onCreateAlias,
+}: ModelTableProps) {
   return (
     <Table className="min-w-176">
       <TableHeader>
@@ -68,6 +112,7 @@ export function ModelTable({
           <TableHead className="text-right">Output / 1M</TableHead>
           <TableHead>Tags</TableHead>
           <TableHead>Price source</TableHead>
+          <TableHead>Test</TableHead>
           <TableHead>Enabled</TableHead>
           <TableHead className="w-10">
             <span className="sr-only">Actions</span>
@@ -89,6 +134,11 @@ export function ModelTable({
                 title={m.name ? `${m.id} — ${m.name}` : m.id}
               >
                 {m.id}
+                {m.custom && (
+                  <span className="ml-2 font-sans no-underline">
+                    <StatusBadge tone="accent">custom</StatusBadge>
+                  </span>
+                )}
                 {m.name && m.name !== m.id && (
                   <span className="ml-2 font-sans text-muted-foreground no-underline">
                     {m.name}
@@ -133,6 +183,9 @@ export function ModelTable({
                 )}
               </TableCell>
               <TableCell>
+                <TestCell test={m.last_test} running={testing.has(key)} />
+              </TableCell>
+              <TableCell>
                 <Switch
                   size="sm"
                   checked={m.enabled}
@@ -147,12 +200,38 @@ export function ModelTable({
                   groups={[
                     [
                       {
+                        label: "Test model",
+                        icon: PlayIcon,
+                        disabled: testBusy,
+                        onSelect: () => onTest(row),
+                      },
+                      {
+                        label: "Set price…",
+                        icon: BadgeDollarSignIcon,
+                        onSelect: () => onSetPrice(row),
+                      },
+                      {
                         label: "Create alias",
                         icon: NetworkIcon,
                         disabled: !onCreateAlias,
                         onSelect: () => onCreateAlias?.(row),
                       },
                     ],
+                    m.custom
+                      ? [
+                          {
+                            label: "Edit custom model",
+                            icon: PencilIcon,
+                            onSelect: () => onEdit(row),
+                          },
+                          {
+                            label: "Delete custom model",
+                            icon: Trash2Icon,
+                            destructive: true,
+                            onSelect: () => onDelete(row),
+                          },
+                        ]
+                      : [],
                   ]}
                 />
               </TableCell>

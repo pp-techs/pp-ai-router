@@ -46,6 +46,7 @@ pp-ai-router/
 | `pricing/`                                    | `store.ts`, `cost.ts`, `sync.ts`, `litellm.ts`, `openrouter.ts`, `types.ts`                                   |
 | `oauth/`                                      | `types.ts`, `login-sessions.ts`, `token-manager.ts`, `paste.ts` (PKCE, pasted redirect parsing)               |
 | `models.ts`                                   | `ModelCatalog` stored model lists + sync scheduler                                                            |
+| `model-tests.ts`                              | `ModelTester`: one tiny request to `provider/model` through the provider's credentials, outcome stored        |
 | `quota/`                                      | `service.ts` (`QuotaService`: cache, probes, pool parking, sync), `types.ts`, `wire.ts` (parsing helpers)     |
 | `admin/routes.ts`                             | `/admin/*` API behind `ADMIN_TOKEN`                                                                           |
 | `providers/`                                  | Adapters (see below)                                                                                          |

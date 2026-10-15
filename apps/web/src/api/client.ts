@@ -8,10 +8,12 @@ import type {
   Credential,
   CredentialCreate,
   CredentialPatch,
+  CustomModelInput,
   KeyCreate,
   KeyPatch,
   Limit,
   LimitInput,
+  ModelTest,
   OAuthSession,
   OAuthStart,
   OAuthStartBody,
@@ -21,6 +23,7 @@ import type {
   PricingSyncState,
   Provider,
   ProviderCreate,
+  ProviderModel,
   ProviderPatch,
   ProviderModelGroup,
   ProviderModels,
@@ -109,6 +112,14 @@ export const api = {
       `/admin/models/${id(providerId)}`,
       { body: models ? { enabled, models } : { enabled } },
     ),
+  /** Adds or replaces a hand-made model of a provider. */
+  putCustomModel: (providerId: string, model: string, body: CustomModelInput) =>
+    request<ProviderModel>("PUT", `/admin/models/${id(providerId)}/${slashPath(model)}`, { body }),
+  deleteCustomModel: (providerId: string, model: string) =>
+    request<void>("DELETE", `/admin/models/${id(providerId)}/${slashPath(model)}`),
+  /** Sends one tiny request to the model; a failing model is still a resolved result with `ok: false`. */
+  testModel: (provider: string, model: string) =>
+    request<ModelTest>("POST", "/admin/model-tests", { body: { provider, model } }),
 
   keys: () => unwrap(request<List<VirtualKey>>("GET", "/admin/keys")),
   createKey: (body: KeyCreate) => request<CreatedKey>("POST", "/admin/keys", { body }),

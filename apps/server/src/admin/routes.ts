@@ -19,9 +19,10 @@ import { STRATEGIES } from "../pool/selectors.ts";
 import type { PricingStore } from "../pricing/store.ts";
 import type { ModelPrice } from "../pricing/types.ts";
 import { syncPricing } from "../pricing/sync.ts";
-import type { ProviderAdapter } from "../providers/adapter.ts";
-import type { ModelCatalog, ModelList } from "../models.ts";
 import type { ModelMetadataStore } from "../model-metadata.ts";
+import type { ModelCatalog, ModelList } from "../models.ts";
+import type { ModelTester, ModelTestResult } from "../model-tests.ts";
+import type { ModelInfo, ProviderAdapter } from "../providers/adapter.ts";
 import { LoginError, type LoginSessions, type SessionStatus } from "../oauth/login-sessions.ts";
 import type { LoginStartInfo } from "../oauth/types.ts";
 import type { QuotaService, QuotaStatus } from "../quota/service.ts";
@@ -45,6 +46,7 @@ export interface AdminDeps {
   models: ModelCatalog;
   quota: QuotaService;
   log: Logger;
+  tester: ModelTester;
   audit?: AuditLogStore;
   now?: () => number;
 }
@@ -110,6 +112,21 @@ const modelPatch = z.strictObject({ enabled: z.boolean() });
 const modelBulkPatch = z.strictObject({
   enabled: z.boolean(),
   models: z.array(z.string().min(1).max(500)).max(100_000).optional(),
+});
+const customModelBody = z.strictObject({
+  name: z.string().trim().min(1).max(200).nullish(),
+  description: z.string().trim().min(1).max(5000).nullish(),
+  /** Release date, Unix seconds. */
+  created: z.number().int().min(0).nullish(),
+  context_window: z.number().int().min(1).max(100_000_000).nullish(),
+  max_output_tokens: z.number().int().min(1).max(100_000_000).nullish(),
+  input_modalities: z.array(z.string().trim().min(1).max(50)).max(20).nullish(),
+  output_modalities: z.array(z.string().trim().min(1).max(50)).max(20).nullish(),
+  supported_parameters: z.array(z.string().trim().min(1).max(100)).max(100).nullish(),
+});
+const modelTestBody = z.strictObject({
+  provider: z.string().min(1),
+  model: z.string().min(1).max(500),
 });
 
 const limitInput = z.strictObject({
@@ -197,6 +214,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
     models,
     quota,
     audit,
+    tester,
   } = deps;
   const now = deps.now ?? Date.now;
   const app = new Hono();
@@ -418,42 +436,57 @@ export function createAdminApp(deps: AdminDeps): Hono {
     };
   };
   // ---- provider models (fixed list for OAuth providers, fetched + stored for the rest) ---------
-  const modelsView = (providerId: string, list: ModelList) => ({
-    source: list.source,
-    fetched_at: list.fetchedAt,
-    error: list.error,
-    data: list.models.map((m) => {
-      const price = pricing.lookup([`${providerId}/${m.id}`, m.id]);
-      return {
-        id: m.id,
-        name: m.name ?? null,
-        context_window: m.contextWindow ?? null,
-        description: m.description ?? null,
-        created: m.created ?? null,
-        max_output_tokens: m.maxOutputTokens ?? null,
-        input_modalities: m.inputModalities ?? null,
-        output_modalities: m.outputModalities ?? null,
-        supported_parameters: m.supportedParameters ?? null,
-        // Which facts did not come from the provider itself, e.g. `{ context_window: "openrouter" }`.
-        sources: m.sources
-          ? Object.fromEntries(
-              Object.entries(m.sources).map(([k, v]) => [
-                k.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`),
-                v,
-              ]),
-            )
-          : null,
-        enabled: !registry.isModelDisabled(providerId, m.id),
-        price: price
-          ? {
-              input_per_1m: per1m(price.input),
-              output_per_1m: per1m(price.output),
-              source: price.source,
-            }
-          : null,
-      };
-    }),
+  const testView = (t: ModelTestResult) => ({
+    ok: t.ok,
+    status: t.status,
+    latency_ms: t.latencyMs,
+    error: t.error,
+    reply: t.reply,
+    credential: t.credential,
+    tested_at: t.testedAt,
   });
+  const modelView = (providerId: string, m: ModelInfo, test: ModelTestResult | undefined) => {
+    const price = pricing.lookup([`${providerId}/${m.id}`, m.id]);
+    return {
+      id: m.id,
+      name: m.name ?? null,
+      context_window: m.contextWindow ?? null,
+      description: m.description ?? null,
+      created: m.created ?? null,
+      max_output_tokens: m.maxOutputTokens ?? null,
+      input_modalities: m.inputModalities ?? null,
+      output_modalities: m.outputModalities ?? null,
+      supported_parameters: m.supportedParameters ?? null,
+      // Which facts did not come from the provider itself, e.g. `{ context_window: "openrouter" }`.
+      sources: m.sources
+        ? Object.fromEntries(
+            Object.entries(m.sources).map(([k, v]) => [
+              k.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`),
+              v,
+            ]),
+          )
+        : null,
+      custom: m.custom === true,
+      enabled: !registry.isModelDisabled(providerId, m.id),
+      price: price
+        ? {
+            input_per_1m: per1m(price.input),
+            output_per_1m: per1m(price.output),
+            source: price.source,
+          }
+        : null,
+      last_test: test ? testView(test) : null,
+    };
+  };
+  const modelsView = (providerId: string, list: ModelList) => {
+    const tests = tester.latest(providerId);
+    return {
+      source: list.source,
+      fetched_at: list.fetchedAt,
+      error: list.error,
+      data: list.models.map((m) => modelView(providerId, m, tests.get(m.id))),
+    };
+  };
 
   /** Stored list; the first view of a provider that was never fetched triggers a fetch. */
   app.get("/providers/:id/models", async (c) => {
@@ -549,6 +582,70 @@ export function createAdminApp(deps: AdminDeps): Hono {
       details: { provider, model, enabled },
     });
     return c.json({ provider, id: model, enabled });
+  });
+
+  /** Adds or replaces a hand-made model; it joins the provider's list and survives refreshes. */
+  app.put("/models/:provider/:model{.+}", async (c) => {
+    const provider = c.req.param("provider");
+    const id = c.req.param("model");
+    if (!registry.provider(provider)) throw notFound("Provider");
+    if (id.length > 500 || id !== id.trim())
+      throw new HttpError(
+        400,
+        "invalid_request",
+        "Model id must be at most 500 characters, without surrounding spaces.",
+      );
+    const b = await parse(c, customModelBody);
+    const info: ModelInfo = { id };
+    if (b.name) info.name = b.name;
+    if (b.description) info.description = b.description;
+    if (b.created != null) info.created = b.created;
+    if (b.context_window != null) info.contextWindow = b.context_window;
+    if (b.max_output_tokens != null) info.maxOutputTokens = b.max_output_tokens;
+    if (b.input_modalities?.length) info.inputModalities = b.input_modalities;
+    if (b.output_modalities?.length) info.outputModalities = b.output_modalities;
+    if (b.supported_parameters?.length) info.supportedParameters = b.supported_parameters;
+    models.putCustom(provider, info);
+    audit?.record({
+      category: "admin",
+      action: "model.custom_put",
+      actor: "admin",
+      targetType: "model",
+      targetId: `${provider}/${id}`,
+      status: "success",
+      statusCode: 200,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { provider, model: id },
+    });
+    const stored = models.describe(provider, id);
+    return c.json(modelView(provider, stored, tester.latest(provider).get(id)));
+  });
+
+  /** Removes a hand-made model (listed models cannot be deleted, only switched off). */
+  app.delete("/models/:provider/:model{.+}", (c) => {
+    const provider = c.req.param("provider");
+    const id = c.req.param("model");
+    if (!registry.provider(provider)) throw notFound("Provider");
+    if (!models.deleteCustom(provider, id)) throw notFound("Custom model");
+    audit?.record({
+      category: "admin",
+      action: "model.custom_delete",
+      actor: "admin",
+      targetType: "model",
+      targetId: `${provider}/${id}`,
+      status: "success",
+      statusCode: 204,
+      ip: c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      details: { provider, model: id },
+    });
+    return c.body(null, 204);
+  });
+
+  /** Sends one tiny request to `provider/model` and stores the outcome. A failing model is a 200 with `ok: false`. */
+  app.post("/model-tests", async (c) => {
+    const { provider, model } = await parse(c, modelTestBody);
+    if (!registry.provider(provider)) throw notFound("Provider");
+    return c.json(testView(await tester.test(provider, model)));
   });
   app.get("/providers/:id/credentials", (c) => {
     const provider = registry.provider(c.req.param("id"));

@@ -288,6 +288,34 @@ export interface PricingSyncResult {
   models?: number;
   error?: string;
 }
+/** Outcome of the latest test request sent to a model (`POST /admin/model-tests`). */
+export interface ModelTest {
+  /** The upstream answered 2xx. */
+  ok: boolean;
+  /** Upstream HTTP status; null when nothing came back (no credential, transport error, timeout). */
+  status: number | null;
+  latency_ms: number;
+  error: string | null;
+  /** Start of the model's answer. */
+  reply: string | null;
+  /** Label of the credential that served (or last refused) the test. */
+  credential: string | null;
+  /** Epoch ms. */
+  tested_at: number;
+}
+
+/** The facts an operator can give a hand-made model; blank/null leaves one unset. */
+export interface CustomModelInput {
+  name: string | null;
+  description: string | null;
+  /** Release date, Unix seconds. */
+  created: number | null;
+  context_window: number | null;
+  max_output_tokens: number | null;
+  input_modalities: string[] | null;
+  output_modalities: string[] | null;
+  supported_parameters: string[] | null;
+}
 
 export interface ProviderModel {
   id: string;
@@ -304,7 +332,11 @@ export interface ProviderModel {
   sources: Record<string, string> | null;
   /** False when an operator switched the model off: it is not routed to and not listed in `/v1/models`. */
   enabled: boolean;
+  /** Added by hand (editable and deletable) rather than listed by the provider. */
+  custom: boolean;
   price: { input_per_1m: number | null; output_per_1m: number | null; source: string } | null;
+  /** Null until the model was tested. */
+  last_test: ModelTest | null;
 }
 
 export interface ProviderModels {

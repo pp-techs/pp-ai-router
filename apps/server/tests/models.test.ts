@@ -77,6 +77,8 @@ describe("fetching a provider's models", () => {
         supported_parameters: null,
         sources: null,
         enabled: true,
+        custom: false,
+        last_test: null,
         price: { input_per_1m: 2, output_per_1m: 8, source: "override" },
       },
       {
@@ -91,6 +93,8 @@ describe("fetching a provider's models", () => {
         supported_parameters: null,
         sources: null,
         enabled: true,
+        custom: false,
+        last_test: null,
         price: null,
       },
     ]);

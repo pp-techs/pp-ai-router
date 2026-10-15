@@ -10,6 +10,8 @@ One SQLite file (`node:sqlite`, WAL, `foreign_keys=ON`, `STRICT` tables). `db/mi
 | `provider_models`, `provider_model_sync`                  | Stored model lists and last sync outcome per provider                                              |
 | `model_metadata`                                          | Model facts from external catalogs (OpenRouter), merged into model lists at read time              |
 | `disabled_models`                                         | `provider/model` pairs an operator switched off (kept apart: model lists are rewritten on refresh) |
+| `custom_models`                                           | Models an operator added by hand, merged into a provider's list at read time (survive refreshes)   |
+| `model_tests`                                             | Latest test request outcome per model (`POST /admin/model-tests`)                                  |
 | `virtual_keys`, `limits`                                  | Client keys (SHA-256 only) and their limits                                                        |
 | `usage_buckets`                                           | Pre-aggregated per-key usage: minute buckets (windows <= 1 day), hour buckets (longer)             |
 | `usage_events`                                            | Append-only ledger, no foreign keys so history survives key/credential deletion                    |

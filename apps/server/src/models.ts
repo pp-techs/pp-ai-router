@@ -53,6 +53,18 @@ function toInfo(r: ModelRow): ModelInfo {
   };
 }
 
+/** The columns of a model row after its provider: id, name, context window, the remaining facts as JSON. */
+function encode(m: ModelInfo): [string, string | null, number | null, string | null] {
+  // `sources` is derived at read time and `custom` is the table the row lives in.
+  const { id, name, contextWindow, sources: _sources, custom: _custom, ...rest } = m;
+  return [
+    id,
+    name ?? null,
+    contextWindow ?? null,
+    Object.keys(rest).length > 0 ? JSON.stringify(rest) : null,
+  ];
+}
+
 /**
  * What each provider offers. OAuth/subscription adapters ship a fixed list. For the rest the list is
  * fetched from the upstream with one of the provider's credentials and stored, so it survives
@@ -85,6 +97,14 @@ export class ModelCatalog {
     this.#metadata = metadata;
     this.#now = now;
   }
+  /** `base` with the provider's custom models added; a custom model replaces a listed one of the same id. */
+  #withCustom(providerId: string, base: ModelInfo[]): ModelInfo[] {
+    const custom = this.#custom(providerId);
+    if (custom.length === 0) return base;
+    const byId = new Map(custom.map((m) => [m.id, m]));
+    const seen = new Set(base.map((m) => m.id));
+    return [...base.map((m) => byId.get(m.id) ?? m), ...custom.filter((m) => !seen.has(m.id))];
+  }
 
   /** Stored list, no network. */
   get(providerId: string): ModelList {
@@ -93,7 +113,9 @@ export class ModelCatalog {
     if (adapter?.staticModels) {
       return {
         source: "static",
-        models: adapter.staticModels.map((m) => this.#metadata.enrich(providerId, m)),
+        models: this.#withCustom(providerId, [...adapter.staticModels]).map((m) =>
+          this.#metadata.enrich(providerId, m),
+        ),
         fetchedAt: null,
         error: null,
       };
@@ -102,15 +124,17 @@ export class ModelCatalog {
       this.#db.prepare("SELECT * FROM provider_model_sync WHERE provider_id = ?"),
       providerId,
     );
-    const models = all<ModelRow>(
+    const listed = all<ModelRow>(
       this.#db.prepare(
         "SELECT model_id, name, context_window, details FROM provider_models WHERE provider_id = ? ORDER BY model_id",
       ),
       providerId,
-    ).map((row) => this.#metadata.enrich(providerId, toInfo(row)));
+    ).map(toInfo);
     return {
-      source: models.length > 0 ? "fetched" : "none",
-      models,
+      source: listed.length > 0 ? "fetched" : "none",
+      models: this.#withCustom(providerId, listed)
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .map((m) => this.#metadata.enrich(providerId, m)),
       fetchedAt: sync?.synced_at ?? null,
       error: sync?.last_error ?? null,
     };
@@ -153,6 +177,37 @@ export class ModelCatalog {
         continue;
       await this.refresh(p.id).catch(() => {});
     }
+  }
+
+  /** Stored custom models of `providerId`, in id order. */
+  #custom(providerId: string): ModelInfo[] {
+    return all<ModelRow>(
+      this.#db.prepare(
+        "SELECT model_id, name, context_window, details FROM custom_models WHERE provider_id = ? ORDER BY model_id",
+      ),
+      providerId,
+    ).map((row) => ({ ...toInfo(row), custom: true }));
+  }
+
+  /** Adds or replaces a hand-made model. Its facts are kept as given; the catalog only fills gaps. */
+  putCustom(providerId: string, model: ModelInfo): void {
+    this.#db
+      .prepare(
+        `INSERT INTO custom_models (provider_id, model_id, name, context_window, details, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(provider_id, model_id) DO UPDATE SET name = excluded.name,
+           context_window = excluded.context_window, details = excluded.details`,
+      )
+      .run(providerId, ...encode(model), this.#now());
+  }
+
+  /** True when a custom model of that id existed. */
+  deleteCustom(providerId: string, modelId: string): boolean {
+    return (
+      this.#db
+        .prepare("DELETE FROM custom_models WHERE provider_id = ? AND model_id = ?")
+        .run(providerId, modelId).changes > 0
+    );
   }
 
   /** Facts for one model of `providerId`, stored or (for a model the provider never listed) from the catalog alone. */
@@ -203,12 +258,7 @@ export class ModelCatalog {
       const insert = this.#db.prepare(
         "INSERT OR REPLACE INTO provider_models (provider_id, model_id, name, context_window, details) VALUES (?, ?, ?, ?, ?)",
       );
-      for (const m of models) {
-        // `name` and the context window have their own columns; `sources` is derived at read time.
-        const { id, name, contextWindow, sources: _sources, ...rest } = m;
-        const details = Object.keys(rest).length > 0 ? JSON.stringify(rest) : null;
-        insert.run(providerId, id, name ?? null, contextWindow ?? null, details);
-      }
+      for (const m of models) insert.run(providerId, ...encode(m));
       this.#db
         .prepare(
           `INSERT INTO provider_model_sync (provider_id, synced_at, last_attempt_at, last_error) VALUES (?, ?, ?, NULL)

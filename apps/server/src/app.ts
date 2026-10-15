@@ -21,6 +21,7 @@ import { PricingStore } from "./pricing/store.ts";
 import { ADAPTERS, type ProviderAdapter } from "./providers/adapter.ts";
 import { listClientModels } from "./client-models.ts";
 import { ModelMetadataStore } from "./model-metadata.ts";
+import { ModelTester } from "./model-tests.ts";
 import { ModelCatalog } from "./models.ts";
 import { Registry } from "./registry.ts";
 import { AuditLogStore } from "./audit/store.ts";
@@ -81,6 +82,15 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
   const logins = new LoginSessions(db, box, registry, adapters, now);
   const models = new ModelCatalog(db, registry, tokens, adapters, log, metadata, now);
   const quota = new QuotaService(registry, pool, tokens, adapters, log, now);
+  const tester = new ModelTester(
+    db,
+    registry,
+    pool,
+    tokens,
+    adapters,
+    config.UPSTREAM_TIMEOUT_MS,
+    now,
+  );
 
   const app = new Hono();
   app.onError((error, c) => {
@@ -158,6 +168,7 @@ export function createServices(config: AppConfig, options: ServiceOptions = {}):
       quota,
       log,
       audit,
+      tester,
       now,
     }),
   );
