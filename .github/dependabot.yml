@@ -10,6 +10,13 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    # One PR per ecosystem instead of one per dependency. Majors are grouped
+    # separately so they can be reviewed (and fail) without blocking the rest.
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+      major:
+        update-types: ["major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -20,6 +27,9 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
+    groups:
+      actions:
+        patterns: ["*"]
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -30,3 +40,6 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    groups:
+      docker:
+        patterns: ["*"]
