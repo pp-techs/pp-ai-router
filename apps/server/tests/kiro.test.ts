@@ -1498,6 +1498,39 @@ describe("kiro token refresh", () => {
     });
   });
 
+  it("treats only the exact desktop 401 Bad credentials pair as terminal", async () => {
+    const refreshWith = async (extra: Record<string, string>, status: number, body: Json) => {
+      const idp = fakeIdp();
+      idp.state.refreshAnswer = () => idp.json(status, body);
+      return idp.oauth.refresh(tokens(extra)).then(
+        () => null,
+        (error: unknown) => error as OAuthRefreshError,
+      );
+    };
+    const desktop = { profileArn: "arn:aws:codewhisperer:us-east-1:123456789012:profile/ABC" };
+    expect(await refreshWith(desktop, 401, { message: "Bad credentials" })).toMatchObject({
+      terminal: true,
+      message: "Kiro token refresh failed: 401 (bad_credentials)",
+    });
+    // other statuses, messages and shapes stay retryable, and the raw text is never surfaced
+    for (const [status, body] of [
+      [400, { message: "Bad credentials" }],
+      [403, { message: "Bad credentials" }],
+      [401, { message: "Bad credentials, retry" }],
+      [401, { message: "The bearer token is expired" }],
+      [401, {}],
+    ] as const) {
+      const error = await refreshWith(desktop, status, body);
+      expect(error!.terminal).toBe(false);
+      expect(error!.message).toMatch(/^Kiro token refresh failed: \d{3}$/);
+    }
+    // the AWS SSO refresh is unaffected
+    expect(await refreshWith(sso, 401, { message: "Bad credentials" })).toMatchObject({
+      terminal: false,
+      message: "Kiro token refresh failed: 401",
+    });
+  });
+
   it("treats a network failure as transient and a missing refresh token as terminal", async () => {
     const oauth = createKiroOAuth({
       fetch: (() => Promise.reject(new TypeError("fetch failed"))) as unknown as typeof fetch,

@@ -45,6 +45,23 @@ export const USER_AGENT =
   process.env.GOOGLE_ANTIGRAVITY_USER_AGENT?.trim() ||
   `antigravity/ide/${IDE_VERSION} (os_type=windows; arch=amd64; aidev_client; auth_method=oauth)`;
 
+/**
+ * Antigravity CLI User-Agent. Cloud Code Assist serves Gemini 4 Argon only to the CLI client family
+ * and 404s the other agent models under it, so it is chosen per wire model
+ * (`userAgentForWireModel`). `GOOGLE_ANTIGRAVITY_USER_AGENT` never applies to it: letting it replace
+ * this header would lock Argon again.
+ */
+export const CLI_USER_AGENT =
+  "antigravity/cli/1.3.4 (os_type=darwin; arch=arm64; aidev_client; auth_method=oauth)";
+
+/** Wire ids served only to the CLI client family. */
+const CLI_ONLY_WIRE_MODEL = /^gemini-4-argon(?:-(?:low|medium|high))?$/;
+
+/** The User-Agent an inference request for `wireModelId` must carry. */
+export function userAgentForWireModel(wireModelId: string): string {
+  return CLI_ONLY_WIRE_MODEL.test(wireModelId) ? CLI_USER_AGENT : USER_AGENT;
+}
+
 /** Default `base_url` of the provider. */
 export const DEFAULT_BASE_URL = DAILY_API;
 

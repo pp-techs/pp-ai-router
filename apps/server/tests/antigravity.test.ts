@@ -4,7 +4,14 @@ import { parseCallbackInput } from "../src/oauth/paste.ts";
 import { OAuthRefreshError, type OAuthTokens } from "../src/oauth/types.ts";
 import { ADAPTERS } from "../src/providers/adapter.ts";
 import { createAntigravityAdapter } from "../src/providers/antigravity/adapter.ts";
-import { CLIENT_ID, CLIENT_SECRET, REDIRECT_URI } from "../src/providers/antigravity/constants.ts";
+import {
+  CLI_USER_AGENT,
+  CLIENT_ID,
+  CLIENT_SECRET,
+  REDIRECT_URI,
+  USER_AGENT,
+  userAgentForWireModel,
+} from "../src/providers/antigravity/constants.ts";
 import { ANTIGRAVITY_MODELS, resolveWireModel } from "../src/providers/antigravity/models.ts";
 import { createAntigravityOAuth, type LoginState } from "../src/providers/antigravity/oauth.ts";
 import { resetReplay } from "../src/providers/antigravity/replay.ts";
@@ -423,6 +430,55 @@ describe("model mapping", () => {
     });
     expect(resolveWireModel("gemini-3.1-pro-preview")).toEqual({ wireModelId: "gemini-pro-agent" });
     expect(resolveWireModel("some-new-model")).toEqual({ wireModelId: "some-new-model" });
+  });
+
+  it("resolves Gemini 4 Argon and Claude 5.5 to per-tier suffix wire ids", () => {
+    expect(resolveWireModel("gemini-4-argon")).toEqual({ wireModelId: "gemini-4-argon-medium" });
+    expect(resolveWireModel("gemini-4-argon", "xhigh")).toEqual({
+      wireModelId: "gemini-4-argon-high",
+    });
+    expect(resolveWireModel("gemini-4-argon-high")).toEqual({ wireModelId: "gemini-4-argon-high" });
+    expect(resolveWireModel("claude-opus-5-5", "low")).toEqual({
+      wireModelId: "claude-opus-5-5-low",
+    });
+    expect(resolveWireModel("claude-opus-5-5")).toEqual({ wireModelId: "claude-opus-5-5-medium" });
+    expect(resolveWireModel("claude-sonnet-5-5-low")).toEqual({
+      wireModelId: "claude-sonnet-5-5-low",
+    });
+    const byId = new Map(ANTIGRAVITY_MODELS.map((m) => [m.id, m]));
+    expect(byId.get("gemini-4-argon")).toMatchObject({
+      contextWindow: 1_048_576,
+      inputModalities: ["text", "image"],
+    });
+    expect(byId.get("claude-opus-5-5")).toMatchObject({ contextWindow: 1_000_000 });
+    expect(byId.get("claude-sonnet-4-6")).toBeDefined();
+  });
+
+  it("uses the CLI User-Agent only for Argon wire ids", () => {
+    expect(CLI_USER_AGENT).toBe(
+      "antigravity/cli/1.3.4 (os_type=darwin; arch=arm64; aidev_client; auth_method=oauth)",
+    );
+    for (const id of [
+      "gemini-4-argon",
+      "gemini-4-argon-low",
+      "gemini-4-argon-medium",
+      "gemini-4-argon-high",
+    ]) {
+      expect(userAgentForWireModel(id)).toBe(CLI_USER_AGENT);
+    }
+    for (const id of ["gemini-4-argon-extra", "gemini-3.8-flash-medium", "claude-opus-5-5-high"]) {
+      expect(userAgentForWireModel(id)).toBe(USER_AGENT);
+    }
+    const mk = (model: string) =>
+      buildRequest({
+        baseUrl: "https://x/",
+        token: "t",
+        project: "p",
+        body: { model, messages: [{ role: "user", content: "hi" }] },
+        stream: false,
+      }).headers["user-agent"];
+    expect(mk("gemini-4-argon-high")).toBe(CLI_USER_AGENT);
+    expect(mk("claude-sonnet-5-5")).toBe(USER_AGENT);
   });
 
   it("publishes the context window and the modalities the wire can carry", () => {
