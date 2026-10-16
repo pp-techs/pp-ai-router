@@ -24,9 +24,24 @@ const RETIRED_FLASH_TIERS: Record<string, string> = {
   "gemini-3-flash-agent": "high",
 };
 
+/**
+ * Gemini 4 Argon: one wire id per tier, served only to the CLI User-Agent (see
+ * `userAgentForWireModel`) and only to AI Ultra / Enterprise accounts. Claude 5.5: same per-tier
+ * suffix family, 1,000,000 tokens, IDE User-Agent.
+ */
+const GEMINI_ARGON = "gemini-4-argon";
+const CLAUDE_OPUS_55 = "claude-opus-5-5";
+const CLAUDE_SONNET_55 = "claude-sonnet-5-5";
+
 /** Base ("picker") models. Every other id is a wire id or alias whose suffix already names the effort. */
+// Upstream trimmed its static picker to 3.8 Flash, 4 Argon, Opus 5.5 and Sonnet 5.5 because the
+// 3.7 Flash and 3.1 Pro wire ids 404 live as of 2026-10-14. We keep the older entries (selections
+// still route by name) and add the new ones; Argon only answers AI Ultra/Enterprise accounts.
 const BASE_MODELS = [
   "gemini-3.8-flash",
+  GEMINI_ARGON,
+  CLAUDE_OPUS_55,
+  CLAUDE_SONNET_55,
   "gemini-3.7-flash",
   "gemini-3.1-pro",
   "gemini-3.1-flash-image",
@@ -42,6 +57,9 @@ const BASE_MODELS = [
  */
 const MODEL_FACTS: Record<string, { contextWindow: number; inputModalities: string[] }> = {
   "gemini-3.8-flash": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
+  [GEMINI_ARGON]: { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
+  [CLAUDE_OPUS_55]: { contextWindow: 1_000_000, inputModalities: ["text", "image"] },
+  [CLAUDE_SONNET_55]: { contextWindow: 1_000_000, inputModalities: ["text", "image"] },
   "gemini-3.7-flash": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
   "gemini-3.1-pro": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
   "gemini-3.1-flash-image": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
@@ -76,6 +94,21 @@ const EFFORT_WIRE_MAP: Record<string, Record<string, string>> = {
     medium: "gemini-3.8-flash-medium",
     high: "gemini-3.8-flash-high",
   },
+  [GEMINI_ARGON]: {
+    low: "gemini-4-argon-low",
+    medium: "gemini-4-argon-medium",
+    high: "gemini-4-argon-high",
+  },
+  [CLAUDE_OPUS_55]: {
+    low: "claude-opus-5-5-low",
+    medium: "claude-opus-5-5-medium",
+    high: "claude-opus-5-5-high",
+  },
+  [CLAUDE_SONNET_55]: {
+    low: "claude-sonnet-5-5-low",
+    medium: "claude-sonnet-5-5-medium",
+    high: "claude-sonnet-5-5-high",
+  },
   "gemini-3.1-pro": { low: "gemini-3.1-pro-low", high: "gemini-pro-agent" },
 };
 
@@ -83,10 +116,18 @@ const EFFORT_WIRE_MAP: Record<string, Record<string, string>> = {
  * Base models whose every effort maps to a wire id that already encodes the tier. Sending
  * `thinkingLevel` beside such a suffix would state the effort twice.
  */
-const SUFFIX_TIER_MODELS = new Set(["gemini-3.8-flash"]);
+const SUFFIX_TIER_MODELS = new Set([
+  GEMINI_ARGON,
+  "gemini-3.8-flash",
+  CLAUDE_OPUS_55,
+  CLAUDE_SONNET_55,
+]);
 
 const DEFAULT_EFFORT: Record<string, string> = {
   "gemini-3.8-flash": "medium",
+  [GEMINI_ARGON]: "medium",
+  [CLAUDE_OPUS_55]: "medium",
+  [CLAUDE_SONNET_55]: "medium",
   "gemini-3.1-pro": "high",
 };
 

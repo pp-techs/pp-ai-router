@@ -40,6 +40,12 @@ const TERMINAL_REFRESH_ERRORS: Record<string, true> = {
   access_denied: true,
   expired_token: true,
 };
+/**
+ * The desktop refresh endpoint rejects a dead refresh token with HTTP 401 and a bare
+ * `{"message":"Bad credentials"}` body, without an OAuth `error` code. Only that exact pair is a
+ * terminal verdict; it is surfaced under this fixed code, never the raw text.
+ */
+const DESKTOP_BAD_CREDENTIALS = "bad_credentials";
 
 export interface KiroOAuthOptions {
   fetch?: typeof fetch;
@@ -255,7 +261,9 @@ export function createKiroOAuth(options: KiroOAuthOptions = {}): OAuthProvider<D
     const { clientId, clientSecret } = extra;
     let url = `https://prod.${region}.auth.desktop.kiro.dev/refreshToken`;
     let body: Record<string, unknown> = { refreshToken };
+    let ssoRefresh = false;
     if (clientId && clientSecret) {
+      ssoRefresh = true;
       url = `https://oidc.${region}.amazonaws.com/token`;
       body = { grantType: "refresh_token", clientId, clientSecret, refreshToken };
     }
@@ -270,11 +278,14 @@ export function createKiroOAuth(options: KiroOAuthOptions = {}): OAuthProvider<D
     }
     if (reply.status < 200 || reply.status >= 300) {
       // Only an allowlisted OAuth code is ever surfaced; unknown bodies stay out of the message.
-      const oauthError =
+      let oauthError: string | undefined;
+      if (
         typeof reply.data.error === "string" &&
         Object.hasOwn(TERMINAL_REFRESH_ERRORS, reply.data.error)
-          ? reply.data.error
-          : undefined;
+      )
+        oauthError = reply.data.error;
+      else if (!ssoRefresh && reply.status === 401 && reply.data.message === "Bad credentials")
+        oauthError = DESKTOP_BAD_CREDENTIALS;
       throw new OAuthRefreshError(
         `Kiro token refresh failed: ${reply.status}${oauthError ? ` (${oauthError})` : ""}`,
         (reply.status === 400 || reply.status === 401) && oauthError !== undefined,

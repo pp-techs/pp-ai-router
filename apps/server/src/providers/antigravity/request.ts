@@ -1,6 +1,6 @@
 // Adapted from lidge-jun/opencodex (MIT)
 import { createHash } from "node:crypto";
-import { API_VERSION, USER_AGENT } from "./constants.ts";
+import { API_VERSION, userAgentForWireModel } from "./constants.ts";
 import { isRecord } from "./json.ts";
 import {
   clampMaxOutputTokens,
@@ -462,7 +462,7 @@ export function buildRequest(input: {
     url: `${input.baseUrl.replace(/\/+$/, "")}/${API_VERSION}:${method}${input.stream ? "?alt=sse" : ""}`,
     headers: {
       "content-type": "application/json",
-      "user-agent": USER_AGENT,
+      "user-agent": userAgentForWireModel(wireModelId),
       authorization: `Bearer ${input.token}`,
     },
     body: JSON.stringify({
