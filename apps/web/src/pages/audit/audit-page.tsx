@@ -3,7 +3,7 @@ import { ClipboardListIcon, EyeIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
-import type { AuditCategory, AuditLog, AuditLogFilter, AuditStatus } from "@/api/types";
+import type { AuditCategory, AuditLog, AuditLogFilter, AuditStatus, VirtualKey } from "@/api/types";
 import { FormField } from "@/components/form-field";
 import { OptionSelect } from "@/components/option-select";
 import { PageHeader, Panel } from "@/components/page";
@@ -43,21 +43,39 @@ interface Draft {
   target_id: string;
 }
 
-function toFilter(draft: Draft): AuditLogFilter {
+/** The Actor filter matches the exact id the server stores, so a key's name or prefix is mapped to its id. */
+function resolveActor(input: string, keys: VirtualKey[]): string {
+  const q = input.toLowerCase();
+  const key = keys.find((k) => k.id === input || k.name.toLowerCase() === q || k.prefix === input);
+  return key ? key.id : input;
+}
+
+function toFilter(draft: Draft, keys: VirtualKey[]): AuditLogFilter {
   return {
     ...(draft.category && { category: draft.category as AuditCategory }),
     ...(draft.action.trim() && { action: draft.action.trim() }),
     ...(draft.status && { status: draft.status as AuditStatus }),
-    ...(draft.actor.trim() && { actor: draft.actor.trim() }),
+    ...(draft.actor.trim() && { actor: resolveActor(draft.actor.trim(), keys) }),
     ...(draft.target_id.trim() && { target_id: draft.target_id.trim() }),
   };
 }
 
+function ActorCell({ actor, keyName }: { actor: string; keyName?: string }) {
+  return (
+    <>
+      {keyName && <p className="font-sans text-sm font-medium text-foreground">{keyName}</p>}
+      <span className="break-all">{actor}</span>
+    </>
+  );
+}
+
 function AuditRow({
   log,
+  keyName,
   onViewDetails,
 }: {
   log: AuditLog;
+  keyName?: string;
   onViewDetails: (log: AuditLog) => void;
 }) {
   return (
@@ -69,7 +87,9 @@ function AuditRow({
         </span>
       </TableCell>
       <TableCell className="font-mono text-xs font-semibold">{log.action}</TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">{log.actor}</TableCell>
+      <TableCell className="font-mono text-xs whitespace-normal text-muted-foreground">
+        <ActorCell actor={log.actor} keyName={keyName} />
+      </TableCell>
       <TableCell className="min-w-32 font-mono text-xs">
         {log.target_type && <span className="text-muted-foreground">{log.target_type}: </span>}
         {log.target_id ?? "—"}
@@ -118,6 +138,9 @@ export function AuditLogsPage() {
   const [filter, setFilter] = useState<AuditLogFilter>({});
   const [cursors, setCursors] = useState<(number | undefined)[]>([undefined]);
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+  const keysQuery = useQuery({ queryKey: qk.keys, queryFn: api.keys });
+  const keyList = keysQuery.data ?? [];
+  const keyNames = new Map(keyList.map((k) => [k.id, k.name]));
   const before = cursors[cursors.length - 1];
 
   const logsQuery = useQuery({
@@ -128,7 +151,7 @@ export function AuditLogsPage() {
 
   function apply(e: FormEvent) {
     e.preventDefault();
-    setFilter(toFilter(draft));
+    setFilter(toFilter(draft, keyList));
     setCursors([undefined]);
   }
 
@@ -198,7 +221,7 @@ export function AuditLogsPage() {
           <FormField label="Actor" className="w-auto min-w-36">
             <Input
               value={draft.actor}
-              placeholder="e.g. admin or key id"
+              placeholder="key id, name or prefix"
               onChange={(e) => setDraft((d) => ({ ...d, actor: e.target.value }))}
             />
           </FormField>
@@ -248,7 +271,12 @@ export function AuditLogsPage() {
               </TableHeader>
               <TableBody>
                 {list.map((log) => (
-                  <AuditRow key={log.id} log={log} onViewDetails={setSelectedLog} />
+                  <AuditRow
+                    key={log.id}
+                    log={log}
+                    keyName={keyNames.get(log.actor)}
+                    onViewDetails={setSelectedLog}
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -282,7 +310,7 @@ export function AuditLogsPage() {
       </Panel>
 
       <Dialog open={selectedLog !== null} onOpenChange={(open) => !open && setSelectedLog(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="font-mono text-sm">{selectedLog?.action}</DialogTitle>
             <DialogDescription>
@@ -298,11 +326,16 @@ export function AuditLogsPage() {
               </div>
               <div>
                 <span className="font-medium text-muted-foreground">Actor:</span>{" "}
-                <span className="font-mono">{selectedLog?.actor}</span>
+                <span className="font-mono break-all">
+                  {selectedLog && keyNames.get(selectedLog.actor)
+                    ? `${keyNames.get(selectedLog.actor)} · `
+                    : ""}
+                  {selectedLog?.actor}
+                </span>
               </div>
               <div>
                 <span className="font-medium text-muted-foreground">Target:</span>{" "}
-                <span className="font-mono">
+                <span className="font-mono break-all">
                   {selectedLog?.target_type ? `${selectedLog.target_type}: ` : ""}
                   {selectedLog?.target_id ?? "—"}
                 </span>
@@ -315,7 +348,7 @@ export function AuditLogsPage() {
               </div>
               <div>
                 <span className="font-medium text-muted-foreground">IP:</span>{" "}
-                <span className="font-mono">{selectedLog?.ip ?? "—"}</span>
+                <span className="font-mono break-all">{selectedLog?.ip ?? "—"}</span>
               </div>
               <div>
                 <span className="font-medium text-muted-foreground">Latency:</span>{" "}
@@ -329,7 +362,7 @@ export function AuditLogsPage() {
             {parsedDetails !== null && parsedDetails !== undefined && (
               <div>
                 <span className="text-xs font-medium text-muted-foreground">Payload Details:</span>
-                <pre className="mt-1 max-h-60 overflow-auto rounded bg-muted/50 p-2 font-mono text-xs">
+                <pre className="mt-1 max-h-60 overflow-auto rounded bg-muted/50 p-2 font-mono text-xs break-all whitespace-pre-wrap">
                   {typeof parsedDetails === "string"
                     ? parsedDetails
                     : JSON.stringify(parsedDetails, null, 2)}

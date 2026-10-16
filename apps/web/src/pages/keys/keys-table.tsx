@@ -84,6 +84,9 @@ function KeyRow({
       <TableCell className="align-top whitespace-nowrap">
         <p className="font-medium">{apiKey.name}</p>
         <code className="font-mono text-xs text-muted-foreground">{apiKey.prefix}…</code>
+        <p className="font-mono text-xs text-muted-foreground">
+          ID: <span className="select-all">{apiKey.id}</span>
+        </p>
       </TableCell>
       <TableCell className="align-top">
         <div className="flex flex-wrap gap-1.5">

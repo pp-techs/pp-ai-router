@@ -6,7 +6,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
 
 /** The slice of the `modal` object better-modal injects that the dialog chrome needs. */
 export interface ModalHandle<TResult> {
@@ -55,12 +54,7 @@ export function ModalDialog<TResult>({
     >
       <DialogContent
         showCloseButton={!persistent}
-        className={cn(
-          // One `minmax(0,1fr)` column whose children may shrink: a wide field can no longer push
-          // the dialog past its max width (the form scrolls instead).
-          "grid-cols-1 max-h-[90vh] overflow-y-auto *:min-w-0",
-          wide ? "sm:max-w-2xl" : "sm:max-w-lg",
-        )}
+        className={wide ? "sm:max-w-2xl" : "sm:max-w-lg"}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
