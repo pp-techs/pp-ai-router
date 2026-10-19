@@ -8,6 +8,7 @@ import {
   rejectsClaudeSdkParagraph,
   resolveWireModel,
 } from "./models.ts";
+import { geminiProgressLead, trimsGeminiProgressHistory } from "./progress-history.ts";
 import { applyReplay, applySignatureFallback, usesReplayCache } from "./replay.ts";
 import { compileGoogleWireBody } from "./wire-compiler.ts";
 
@@ -85,6 +86,21 @@ function contentText(content: unknown): string {
     .join("");
 }
 
+/**
+ * The progress text of an assistant turn that calls tools, for Gemini: the lead sentence of the first
+ * text part that has one (the other parts are dropped), see progress-history.ts.
+ */
+function progressLeadText(content: unknown): string | undefined {
+  if (typeof content === "string") return geminiProgressLead(content);
+  if (!Array.isArray(content)) return undefined;
+  for (const part of content) {
+    if (!isRecord(part) || part.type !== "text" || typeof part.text !== "string") continue;
+    const lead = geminiProgressLead(part.text);
+    if (lead !== undefined) return lead;
+  }
+  return undefined;
+}
+
 function userParts(content: unknown): Json[] {
   if (typeof content === "string") return [{ text: content || EMPTY_PLACEHOLDER }];
   const parts: Json[] = [];
@@ -138,7 +154,10 @@ interface PendingCall {
   name: string;
 }
 
-function messagesToContents(messages: unknown[]): { system: string[]; contents: Json[] } {
+function messagesToContents(
+  messages: unknown[],
+  trimProgress: boolean,
+): { system: string[]; contents: Json[] } {
   const system: string[] = [];
   const contents: Json[] = [];
   const ids = createIdAllocator();
@@ -166,10 +185,20 @@ function messagesToContents(messages: unknown[]): { system: string[]; contents: 
         break;
       case "assistant": {
         const parts: Json[] = [];
-        const text = contentText(message.content);
+        const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+        // Progress text before a Gemini tool call replays as its lead sentence, so planning the model
+        // leaked into visible text is not copied forward; turns without calls replay whole.
+        const text =
+          trimProgress &&
+          toolCalls.some(
+            (call) =>
+              isRecord(call) && isRecord(call.function) && typeof call.function.name === "string",
+          )
+            ? progressLeadText(message.content)
+            : contentText(message.content);
         if (text) parts.push({ text });
         const calls: PendingCall[] = [];
-        for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
+        for (const call of toolCalls) {
           if (!isRecord(call) || !isRecord(call.function) || typeof call.function.name !== "string")
             continue;
           const name = call.function.name;
@@ -368,7 +397,10 @@ export function buildRequest(input: {
     }
   }
 
-  const { system, contents } = messagesToContents(messages);
+  const { system, contents } = messagesToContents(
+    messages,
+    trimsGeminiProgressHistory(wireModelId),
+  );
   let systemText = stripBillingHeader(system.join("\n\n"));
   if (rejectsClaudeSdkParagraph(modelId, wireModelId)) {
     systemText = systemText

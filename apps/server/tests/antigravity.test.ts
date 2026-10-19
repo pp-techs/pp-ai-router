@@ -842,6 +842,34 @@ describe("request compilation", () => {
     ]);
   });
 
+  it("replays Gemini progress text before a tool call as its lead sentence only", () => {
+    const call = { id: "c1", type: "function", function: { name: "read", arguments: "{}" } };
+    const history = (model: string) =>
+      build({
+        model,
+        messages: [
+          { role: "user", content: "go" },
+          {
+            role: "assistant",
+            content: "Reading the file now. Let's read google.ts 580-1700 first. Then edit.",
+            tool_calls: [call],
+          },
+          { role: "tool", tool_call_id: "c1", content: "ok" },
+          { role: "assistant", content: "First I check 3.5. Then the rest follows." },
+          { role: "user", content: "next" },
+        ],
+      }).env.request.contents;
+
+    const gemini = history("gemini-3.8-flash");
+    expect(gemini[1].parts[0]).toEqual({ text: "Reading the file now." });
+    expect(gemini[3].parts).toEqual([{ text: "First I check 3.5. Then the rest follows." }]); // no tool call: whole
+
+    const claude = history("claude-sonnet-4-6");
+    expect(claude[1].parts[0]).toEqual({
+      text: "Reading the file now. Let's read google.ts 580-1700 first. Then edit.",
+    });
+  });
+
   it("maps response_format to structured output and refuses it where it cannot work", () => {
     const schema = { type: "object", properties: { a: { type: "string", pattern: "x" } } };
     const { env } = build({
