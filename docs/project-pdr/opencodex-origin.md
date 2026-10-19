@@ -18,18 +18,18 @@ Per its own README: a "universal provider proxy for OpenAI Codex & Claude Code".
 
 pp-ai-router is **not** a fork: the router, governance, pool, pricing, admin API and admin UI are original. Only the per-provider protocol translation was ported.
 
-**Last synced with upstream**: v2.83.0-130 (`409026b1b`, 2026-10-16) for the `anthropic`, `anthropic-subscription`, `antigravity` and `kiro` adapters. Use this commit as the base for the next `git diff`.
+**Last synced with upstream**: v2.83.0-220 (`6936d9885`, 2026-10-16) for the `anthropic`, `anthropic-subscription`, `antigravity` and `kiro` adapters. Use this commit as the base for the next `git diff`.
 
 ## What was adapted
 
-Every adapted file starts with `// Adapted from lidge-jun/opencodex (MIT)` (33 files under `apps/server/src/providers/`). The port target is the canonical OpenAI chat-completions shape used by `ProviderAdapter` (`providers/adapter.ts`), instead of opencodex's Responses-API front end.
+Every adapted file starts with `// Adapted from lidge-jun/opencodex (MIT)` (34 files under `apps/server/src/providers/`). The port target is the canonical OpenAI chat-completions shape used by `ProviderAdapter` (`providers/adapter.ts`), instead of opencodex's Responses-API front end.
 
-| Provider                 | Adapted files                                                                                                         | Reference behaviour kept                                                                                                                       |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anthropic`              | `anthropic.ts`, `anthropic/{model-contract,request,response}.ts`                                                      | Messages API translation, thinking/adaptive effort rules, signed `thinking_blocks`, history repair                                             |
-| `anthropic-subscription` | `anthropic-subscription/{adapter,constants,oauth,quota,wire}.ts`                                                      | Claude Pro/Max PKCE paste login and refresh, `/api/oauth/usage` windows. The Claude Code request identity follows oh-my-pi instead (see below) |
-| `antigravity`            | `antigravity/{adapter,constants,models,oauth,quota,replay,request,stream,tool-schema,wire-compiler}.ts`               | Cloud Code Assist `v1internal` wire format, model-name mapping, tool-schema reduction, thought-signature replay, PKCE paste login              |
-| `kiro`                   | `kiro/{adapter,errors,events,eventstream,models,oauth,quota,reasoning,request,stream,think-tags,tools,usage,wire}.ts` | CodeWhisperer streaming request/response mapping, AWS event-stream decoding, SSO OIDC device login, region fallback, token-usage heuristics    |
+| Provider                 | Adapted files                                                                                                            | Reference behaviour kept                                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `anthropic`              | `anthropic.ts`, `anthropic/{model-contract,request,response}.ts`                                                         | Messages API translation, thinking/adaptive effort rules, signed `thinking_blocks`, history repair                                             |
+| `anthropic-subscription` | `anthropic-subscription/{adapter,constants,oauth,quota,wire}.ts`                                                         | Claude Pro/Max PKCE paste login and refresh, `/api/oauth/usage` windows. The Claude Code request identity follows oh-my-pi instead (see below) |
+| `antigravity`            | `antigravity/{adapter,constants,models,oauth,progress-history,quota,replay,request,stream,tool-schema,wire-compiler}.ts` | Cloud Code Assist `v1internal` wire format, model-name mapping, tool-schema reduction, thought-signature replay, PKCE paste login              |
+| `kiro`                   | `kiro/{adapter,errors,events,eventstream,models,oauth,quota,reasoning,request,stream,think-tags,tools,usage,wire}.ts`    | CodeWhisperer streaming request/response mapping, AWS event-stream decoding, SSO OIDC device login, region fallback, token-usage heuristics    |
 
 Quota (`kiro/quota.ts` from `src/providers/kiro-usage.ts`, `antigravity/quota.ts` from `src/providers/quota/antigravity.ts`, `anthropic-subscription/quota.ts` from `src/providers/quota/vendor-probes-oauth.ts`) ports only the upstream calls and response parsing. The service around it (`src/quota/`: cache, parking in the pool, admin API, UI) is original.
 
