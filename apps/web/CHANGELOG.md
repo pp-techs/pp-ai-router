@@ -1,5 +1,9 @@
 # web
 
+## 0.16.0
+
+No changes in this release.
+
 ## 0.15.1
 
 ### Patch Changes
