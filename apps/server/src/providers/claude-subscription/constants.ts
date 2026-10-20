@@ -1,5 +1,5 @@
-// Adapted from lidge-jun/opencodex (MIT): src/oauth/anthropic.ts, src/adapters/client-fingerprint.ts;
-// the Claude Code identity follows can1357/oh-my-pi (packages/ai: claude-code-fingerprint, providers/anthropic).
+// Adapted from can1357/oh-my-pi (MIT) and lidge-jun/opencodex (MIT): packages/ai (registry/oauth/anthropic,
+// rules/auth/anthropic.kdl, providers/{claude-code-fingerprint,anthropic}, usage/claude-api); opencodex src/oauth/anthropic.ts.
 
 /**
  * Every protocol constant of the Claude Pro/Max sign-in lives here. The OAuth client id is the public
@@ -17,6 +17,9 @@ export const REDIRECT_URI = "http://localhost:54545/callback";
 export const REQUEST_TIMEOUT_MS = 30_000;
 export const LOGIN_TTL_MS = 10 * 60_000;
 
+/** A token is treated as expired this long before the upstream says (omp's `skew-ms=300000`). */
+export const EXPIRY_SKEW_MS = 300_000;
+
 /** Keys of the provider-side identity inside `OAuthTokens.extra`. */
 export const ACCOUNT_UUID_KEY = "account_uuid";
 export const ORG_UUID_KEY = "organization_uuid";
@@ -33,22 +36,33 @@ export const BOOTSTRAP_MODEL = "claude-opus-4-8";
 export const OAUTH_BETA = "oauth-2025-04-20";
 
 /**
- * The betas a Claude Code agent request carries. `effort` is added when the request asks for it.
- * `context-1m` is deliberately absent: a subscription has no long-context credit balance, so a 1M beta
- * is answered with a 429 whatever the prompt size.
+ * Betas of a Claude Code agent request (one with tools or thinking); omp's `claudeCodeAgentBetaDefaults`.
+ * `effort` is added when the request asks for it. `context-1m` is deliberately absent: a subscription has
+ * no long-context credit balance, so a 1M beta is answered with a 429 whatever the prompt size.
+ * omp also sends `fallback-credit-2026-06-01`; the fallback-credit redemption it belongs to is not ported.
  */
-export const MESSAGES_BETAS: readonly string[] = [
+export const AGENT_BETAS: readonly string[] = [
   "claude-code-20250219",
   OAUTH_BETA,
   "interleaved-thinking-2025-05-14",
   "thinking-token-count-2026-05-13",
   "context-management-2025-06-27",
   "prompt-caching-scope-2026-01-05",
+  "mid-conversation-system-2026-04-07",
+];
+/** Betas of a utility request (no tools, no thinking); omp's `claudeCodeUtilityBetaDefaults`. */
+export const UTILITY_BETAS: readonly string[] = [
+  OAUTH_BETA,
+  "interleaved-thinking-2025-05-14",
+  "thinking-token-count-2026-05-13",
+  "context-management-2025-06-27",
+  "prompt-caching-scope-2026-01-05",
+  "structured-outputs-2025-12-15",
 ];
 export const EFFORT_BETA = "effort-2025-11-24";
 
-/** Betas the CLI sends on the usage probe. */
-export const USAGE_BETA = [
+/** Betas of the account routes (usage, models); omp's `CLAUDE_USAGE_BETAS` / `ANTHROPIC_OAUTH_BETA`. */
+export const ACCOUNT_BETAS = [
   "claude-code-20250219",
   OAUTH_BETA,
   "interleaved-thinking-2025-05-14",
@@ -110,6 +124,12 @@ function stainlessArch(arch: string): string {
   }
 }
 
+/**
+ * The Node release the CLI reports as its runtime. Pinned like the SDK version, not read from
+ * `process.version`: the router runs on Bun, whose `process.version` names a different, older line.
+ */
+const NODE_RUNTIME_VERSION = "v26.3.0";
+
 /** The headers of the real Claude Code CLI; a valid token behind an empty header set is a non-first-party signature. */
 export const CLAUDE_CODE_HEADERS: Readonly<Record<string, string>> = {
   "x-app": "cli",
@@ -121,7 +141,7 @@ export const CLAUDE_CODE_HEADERS: Readonly<Record<string, string>> = {
   "X-Stainless-Arch": stainlessArch(process.arch),
   "X-Stainless-OS": stainlessOs(process.platform),
   "X-Stainless-Package-Version": SDK_VERSION,
-  "X-Stainless-Runtime-Version": process.version,
+  "X-Stainless-Runtime-Version": NODE_RUNTIME_VERSION,
 };
 
 /** Sent with a token refresh, as the SDK's OAuth provider does (and not with the code exchange). */

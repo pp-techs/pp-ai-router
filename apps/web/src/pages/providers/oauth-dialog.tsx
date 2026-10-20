@@ -206,7 +206,7 @@ function PasteFlow({
 
   return (
     <form
-      className="grid gap-4"
+      className="grid min-w-0 grid-cols-1 gap-4"
       onSubmit={(e) => {
         e.preventDefault();
         complete.mutate(input.trim());
@@ -224,7 +224,7 @@ function PasteFlow({
           </a>{" "}
           and approve access.
         </li>
-        <li>{start.instructions}</li>
+        <li className="break-words">{start.instructions}</li>
       </ol>
       <FormField
         label="Redirect URL or code"
@@ -233,7 +233,7 @@ function PasteFlow({
         <Textarea
           required
           rows={3}
-          className="font-mono text-xs"
+          className="field-sizing-fixed font-mono text-xs break-all"
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />

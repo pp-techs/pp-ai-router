@@ -29,7 +29,26 @@ function usedPercent(info: Record<string, unknown>): number | undefined {
   return remaining === undefined ? undefined : normalizePercent(100 - remaining);
 }
 
-type Family = "Gemini" | "Claude";
+type Family = "Gemini" | "Claude" | "Argon";
+
+/**
+ * Gemini 4 Argon is its own quota pool, but its names also contain "gemini": every family decision
+ * checks Argon first, or its readings would fill or replace the Gemini meters.
+ */
+const ARGON_TOKEN = /(?:^|[^a-z0-9])argon(?:[^a-z0-9]|$)/i;
+const GEMINI_TOKEN = /(?:^|[^a-z0-9])gemini(?:[^a-z0-9]|$)/i;
+const CLAUDE_TOKEN = /(?:^|[^a-z0-9])(?:claude|3p|gpt|opus|sonnet)(?:[^a-z0-9]|$)/i;
+
+/** A bucket's own id and name decide its family when they name one; the group decides otherwise. */
+function bucketFamily(bucket: Record<string, unknown>): Family | null {
+  const id = typeof bucket.bucketId === "string" ? bucket.bucketId : "";
+  const name = typeof bucket.displayName === "string" ? bucket.displayName : "";
+  const identity = `${id} ${name}`;
+  if (ARGON_TOKEN.test(identity)) return "Argon";
+  if (GEMINI_TOKEN.test(identity)) return "Gemini";
+  if (CLAUDE_TOKEN.test(identity)) return "Claude";
+  return null;
+}
 
 /** Gemini models, and Claude / third-party (gpt-oss) models, are separate allowances. */
 function familyOf(text: string): Family | null {
@@ -46,6 +65,9 @@ const FAMILY_ORDER = [
   "Claude 5h",
   "Claude weekly",
   "Claude",
+  "Argon 5h",
+  "Argon weekly",
+  "Argon",
 ];
 
 function ordered(windows: QuotaWindow[]): QuotaWindow[] {
@@ -76,7 +98,8 @@ export function parseQuotaSummary(body: unknown): Quota | null {
     if (!group || !Array.isArray(group.buckets)) continue;
     const name = typeof group.displayName === "string" ? group.displayName : "";
     const description = typeof group.description === "string" ? group.description : "";
-    const family = familyOf(`${name} ${description}`);
+    // A description that merely mentions Argon must not move a whole Gemini group.
+    const groupFamily = ARGON_TOKEN.test(name) ? "Argon" : familyOf(`${name} ${description}`);
 
     for (const rawBucket of group.buckets) {
       const bucket = asRecord(rawBucket);
@@ -89,6 +112,7 @@ export function parseQuotaSummary(body: unknown): Quota | null {
       const weekly = text.includes("week");
       const fiveHour = text.includes("5h") || text.includes("five");
       const resetsAt = normalizeResetAt(bucket.resetTime);
+      const family = bucketFamily(bucket) ?? groupFamily;
 
       if (family) {
         if (fiveHour) add({ label: `${family} 5h`, usedPercent: used, resetsAt });
@@ -129,6 +153,8 @@ export function parseModelQuotas(body: unknown): Quota | null {
       const entry = asRecord(rawEntry);
       if (!entry) continue;
       const display = typeof info.displayName === "string" ? info.displayName : "";
+      // Argon has its own pool and is not reported here: it must never seed the Gemini meter.
+      if (ARGON_TOKEN.test(`${id} ${display}`)) continue;
       const tier = typeof entry.tier === "string" ? entry.tier : "";
       const family = familyOf(`${id} ${display} ${tier}`);
       const used = usedPercent(entry);

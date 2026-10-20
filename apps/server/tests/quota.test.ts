@@ -231,6 +231,47 @@ describe("Antigravity quota", () => {
     ).toBeNull();
   });
 
+  it("keeps the Gemini 4 Argon group apart from the Gemini meters", () => {
+    const argonFirst = {
+      groups: [
+        {
+          displayName: "Gemini 4 Argon",
+          buckets: [
+            { window: "5h", remainingFraction: 0.9 },
+            { window: "weekly", remainingFraction: 0.8 },
+          ],
+        },
+        ...summary.groups,
+      ],
+    };
+    const labels = (quota: ReturnType<typeof parseQuotaSummary>) =>
+      Object.fromEntries((quota?.windows ?? []).map((w) => [w.label, w.usedPercent]));
+    expect(labels(parseQuotaSummary(argonFirst))).toEqual({
+      "Gemini 5h": 25,
+      "Gemini weekly": 50,
+      "Claude 5h": 100,
+      "Argon 5h": 10,
+      "Argon weekly": 20,
+    });
+    // A bucket's own name wins over its group's.
+    const argonBucket = {
+      groups: [
+        {
+          displayName: "Gemini models",
+          description: "mentions argon",
+          buckets: [{ bucketId: "gemini-4-argon-weekly", remainingFraction: 0.5 }],
+        },
+      ],
+    };
+    expect(labels(parseQuotaSummary(argonBucket))).toEqual({ "Argon weekly": 50 });
+    // Argon never seeds the Gemini meter of the models fallback.
+    expect(
+      parseModelQuotas({
+        models: { "gemini-4-argon": { quotaInfo: { remainingFraction: 0.5 } } },
+      }),
+    ).toBeNull();
+  });
+
   it("reads one meter per family from the models listing", () => {
     const quota = parseModelQuotas({
       models: {
@@ -680,8 +721,9 @@ describe("quota admin API", () => {
     expect(Object.fromEntries(types.map((t) => [t.type, t.quota]))).toEqual({
       "openai-compat": false,
       anthropic: false,
-      "anthropic-subscription": true,
+      "claude-subscription": true,
       antigravity: true,
+      "chatgpt-subscription": true,
       kiro: true,
     });
   });

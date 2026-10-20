@@ -3,25 +3,27 @@ import { Hono } from "hono";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { ADAPTERS } from "../src/providers/adapter.ts";
-import { createAnthropicSubscriptionAdapter } from "../src/providers/anthropic-subscription/adapter.ts";
+import { createClaudeSubscriptionAdapter } from "../src/providers/claude-subscription/adapter.ts";
 import {
+  ACCOUNT_BETAS,
+  AGENT_BETAS,
   BOOTSTRAP_URL,
   CLIENT_ID,
   EFFORT_BETA,
-  MESSAGES_BETAS,
   OAUTH_BETA,
   REDIRECT_URI,
   SCOPES,
   SYSTEM_INSTRUCTION,
   TOKEN_URL,
-} from "../src/providers/anthropic-subscription/constants.ts";
-import { createAnthropicSubscriptionOAuth } from "../src/providers/anthropic-subscription/oauth.ts";
+  UTILITY_BETAS,
+} from "../src/providers/claude-subscription/constants.ts";
+import { createClaudeSubscriptionOAuth } from "../src/providers/claude-subscription/oauth.ts";
 import {
   modelScope,
   parseRateLimitHeaders,
   parseUsage,
-} from "../src/providers/anthropic-subscription/quota.ts";
-import { xxhash64 } from "../src/providers/anthropic-subscription/xxhash64.ts";
+} from "../src/providers/claude-subscription/quota.ts";
+import { xxhash64 } from "../src/providers/claude-subscription/xxhash64.ts";
 import {
   anthropicMessage,
   anthropicSse,
@@ -95,6 +97,7 @@ async function startClaude() {
     validTokens,
     replies,
     usage,
+    seen: () => seen,
     messages: () => seen.filter((s) => s.path === "/v1/messages"),
   };
 }
@@ -136,19 +139,19 @@ function fakeTokenEndpoint(validTokens: Set<string>) {
   return { calls, headers, bootstraps, failures, fetch: fetchFake };
 }
 
-/** A router with one `anthropic-subscription` provider ("sub") pointed at the fake, signed in. */
+/** A router with one `claude-subscription` provider ("sub") pointed at the fake, signed in. */
 async function setup() {
   const claude = await startClaude();
   const token = fakeTokenEndpoint(claude.validTokens);
   let h: Harness | undefined;
-  const adapter = createAnthropicSubscriptionAdapter({
+  const adapter = createClaudeSubscriptionAdapter({
     fetch: token.fetch,
     now: () => h!.clock.now,
   });
   h = createHarness({}, { adapters: { ...ADAPTERS, [adapter.type]: adapter } });
   const created = await h.admin("POST", "/providers", {
     id: "sub",
-    type: "anthropic-subscription",
+    type: "claude-subscription",
     base_url: claude.url,
   });
   expect(created.status).toBe(201);
@@ -187,7 +190,7 @@ describe("sign-in", () => {
   it("is offered for the provider type, with the Claude authorize URL", async () => {
     const { h, authUrl } = await setup();
     const types = (await h.admin("GET", "/provider-types")).json.data;
-    expect(types.find((t: { type: string }) => t.type === "anthropic-subscription")).toMatchObject({
+    expect(types.find((t: { type: string }) => t.type === "claude-subscription")).toMatchObject({
       default_base_url: "https://api.anthropic.com/v1",
       oauth: { label: "Sign in with Claude (Pro/Max)" },
       models: "fetch",
@@ -222,8 +225,9 @@ describe("sign-in", () => {
     const [cred] = (await h.admin("GET", "/providers/sub/credentials")).json.data;
     expect(cred).toMatchObject({
       status: "active",
-      label: "dev@example.com",
-      expires_at: h.clock.now + HOUR,
+      label: "Dev@Example.com",
+      // omp treats a token as expired 5 minutes early.
+      expires_at: h.clock.now + HOUR - 300_000,
     });
   });
 
@@ -252,13 +256,17 @@ describe("requests", () => {
     expect(sent!.search).toBe("?beta=true");
     expect(sent!.headers.get("authorization")).toBe("Bearer at-1");
     expect(sent!.headers.get("x-api-key")).toBeNull();
-    expect(sent!.headers.get("anthropic-beta")).toBe(MESSAGES_BETAS.join(","));
+    // Nothing but text: a utility request, without the agent betas.
+    expect(sent!.headers.get("anthropic-beta")).toBe(UTILITY_BETAS.join(","));
+    expect(sent!.headers.get("connection")).toBe("keep-alive");
     expect(sent!.headers.get("x-app")).toBe("cli");
     expect(sent!.headers.get("anthropic-dangerous-direct-browser-access")).toBe("true");
     expect(sent!.headers.get("accept")).toBe("application/json");
     expect(sent!.headers.get("user-agent")).toMatch(
       /^claude-cli\/\d+\.\d+\.\d+ \(external, cli\)$/,
     );
+    expect(sent!.headers.get("x-stainless-runtime-version")).toBe("v26.3.0");
+    expect(sent!.headers.get("x-client-request-id")).toBeNull();
 
     const [billing, identity, brief] = sent!.body.system!;
     expect(billing!.text).toMatch(
@@ -268,7 +276,7 @@ describe("requests", () => {
     expect(identity).toEqual({
       type: "text",
       text: SYSTEM_INSTRUCTION,
-      cache_control: { type: "ephemeral" },
+      cache_control: { type: "ephemeral", ttl: "1h" },
     });
     expect(brief).toEqual({ type: "text", text: "Be brief." });
 
@@ -313,14 +321,25 @@ describe("requests", () => {
     expect(c).not.toBe(a);
   });
 
-  it("adds the effort beta only when thinking is requested", async () => {
+  it("picks the beta profile by request kind: utility, agent (tools or thinking), and effort with thinking", async () => {
     const s = await setup();
     await s.login();
     await chat(s, {});
+    await chat(s, { tools: [WEATHER] });
     await chat(s, { reasoning_effort: "high" });
-    const [plain, thinking] = s.claude.messages().map((m) => m.headers.get("anthropic-beta")!);
-    expect(plain).not.toContain(EFFORT_BETA);
-    expect(thinking).toBe([...MESSAGES_BETAS, EFFORT_BETA].join(","));
+    const [plain, tools, thinking] = s.claude
+      .messages()
+      .map((m) => m.headers.get("anthropic-beta")!);
+    expect(plain).toBe(UTILITY_BETAS.join(","));
+    expect(tools).toBe(AGENT_BETAS.join(","));
+    expect(thinking).toBe([...AGENT_BETAS, EFFORT_BETA].join(","));
+  });
+
+  it("always names its tools, even when the client has none", async () => {
+    const s = await setup();
+    await s.login();
+    await chat(s, {});
+    expect(s.claude.messages()[0]!.body.tools).toEqual([]);
   });
 
   it("leaves out its own cache breakpoint when the client already uses all four", async () => {
@@ -334,6 +353,13 @@ describe("requests", () => {
       type: "text",
       text: SYSTEM_INSTRUCTION,
     });
+  });
+
+  it("keeps the identity breakpoint at 5 minutes when a client tool is already cached (a 1h one may not follow it)", async () => {
+    const s = await setup();
+    await s.login();
+    await chat(s, { tools: [{ ...WEATHER, cache_control: { type: "ephemeral" } }] });
+    expect(s.claude.messages()[0]!.body.system![1]!.cache_control).toEqual({ type: "ephemeral" });
   });
 
   it("wraps every tool name on the way out and unwraps the answer, streamed or not", async () => {
@@ -458,12 +484,12 @@ describe("requests", () => {
 });
 
 describe("token lifecycle", () => {
-  it("refreshes shortly before expiry with the rotated refresh token, and after an upstream 401", async () => {
+  it("refreshes before the 5-minute-early expiry with the rotated refresh token, and after an upstream 401", async () => {
     const s = await setup();
     await s.login();
     expect((await chat(s, {})).status).toBe(200);
 
-    s.h.clock.now += HOUR - 30_000;
+    s.h.clock.now += HOUR - 330_000;
     expect((await chat(s, {})).status).toBe(200);
     expect(s.token.calls.at(-1)).toMatchObject({
       grant_type: "refresh_token",
@@ -503,13 +529,34 @@ describe("token lifecycle", () => {
     expect((await s.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
   });
 
-  it("treats the reference's revocation codes as final too", async () => {
+  it("reads a refusal like omp: a dead-grant message or a bare 401 is final, a 401 that smells of an outage is not", async () => {
     const s = await setup();
     await s.login();
-    s.token.failures.push(Response.json({ error: "refresh_token_revoked" }, { status: 401 }));
+    s.token.failures.push(
+      Response.json(
+        { error: "invalid_request", error_description: "Refresh token expired" },
+        { status: 400 },
+      ),
+    );
     s.h.clock.now += HOUR;
     expect((await chat(s, {})).status).toBeGreaterThanOrEqual(500);
     expect((await s.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
+
+    const t = await setup();
+    await t.login();
+    t.token.failures.push(new Response("cloudflare: temporarily unavailable", { status: 401 }));
+    t.h.clock.now += HOUR;
+    expect((await chat(t, {})).status).toBeGreaterThanOrEqual(500);
+    expect((await t.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe(
+      "active",
+    );
+
+    const u = await setup();
+    await u.login();
+    u.token.failures.push(Response.json({ error: "whatever" }, { status: 401 }));
+    u.h.clock.now += HOUR;
+    expect((await chat(u, {})).status).toBeGreaterThanOrEqual(500);
+    expect((await u.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
   });
 });
 
@@ -520,6 +567,17 @@ describe("models and quota", () => {
     const models = await s.h.admin("POST", "/providers/sub/models/refresh", {});
     expect(models.status).toBe(200);
     expect(JSON.stringify(models.json)).toContain("claude-sonnet-4-5");
+  });
+
+  it("lists models with omp's discovery headers", async () => {
+    const s = await setup();
+    await s.login();
+    await s.h.admin("POST", "/providers/sub/models/refresh", {});
+    const sent = s.claude.seen().find((r) => r.path === "/v1/models")!;
+    expect(sent.headers.get("anthropic-beta")).toBe(ACCOUNT_BETAS);
+    expect(sent.headers.get("anthropic-dangerous-direct-browser-access")).toBe("true");
+    expect(sent.headers.get("anthropic-version")).toBe("2023-06-01");
+    expect(sent.headers.get("user-agent")).not.toMatch(/claude-cli/);
   });
 
   it("reads the usage windows and parks an account whose 5-hour window is spent until it resets", async () => {
@@ -609,6 +667,21 @@ describe("parseUsage", () => {
     expect(quota!.windows.map((w) => w.label)).toEqual(["5h", "Opus weekly"]);
   });
 
+  it("takes the account windows from `limits` when the legacy buckets are missing, and ignores legacy Fable buckets", () => {
+    const quota = parseUsage({
+      seven_day_fable: { utilization: 99, resets_at: null },
+      limits: [
+        { kind: "session", percent: 12, resets_at: "2026-10-10T05:00:00Z" },
+        { kind: "weekly_all", percent: 34, resets_at: null },
+      ],
+    });
+    expect(quota!.windows.map((w) => [w.label, w.usedPercent])).toEqual([
+      ["5h", 12],
+      ["Weekly", 34],
+    ]);
+    expect(quota!.complete).toBe(true);
+  });
+
   it("is unusable without any window", () => {
     expect(parseUsage({ five_hour: null, seven_day: null })).toBeNull();
     expect(parseUsage("nope")).toBeNull();
@@ -620,7 +693,7 @@ describe("account identity", () => {
   function signIn(answers: { token?: Record<string, unknown>; bootstrap?: Response }) {
     const bootstraps: string[] = [];
     const tokenHeaders: Headers[] = [];
-    const oauth = createAnthropicSubscriptionOAuth({
+    const oauth = createClaudeSubscriptionOAuth({
       fetch: async (input, init) => {
         const url = input instanceof Request ? input.url : String(input);
         if (url.startsWith(BOOTSTRAP_URL)) {
@@ -652,7 +725,7 @@ describe("account identity", () => {
     });
     const tokens = await s.login();
     expect(tokens).toMatchObject({
-      account: "a@b.c",
+      account: "A@B.C",
       extra: { account_uuid: "u1", organization_uuid: "o1", organization_name: "Team" },
     });
     expect(s.bootstraps).toEqual([]);
@@ -670,7 +743,7 @@ describe("account identity", () => {
       }),
     });
     expect(await found.login()).toMatchObject({
-      account: "x@y.z",
+      account: "X@Y.Z",
       extra: { account_uuid: "u2", organization_uuid: "o2", organization_name: "Max" },
     });
     expect(found.bootstraps).toEqual(["Bearer at"]);
@@ -690,7 +763,7 @@ describe("account identity", () => {
       ...tokens,
       extra: { ...tokens.extra, organization_uuid: "o-login", organization_name: "Login Org" },
     };
-    const refreshed = await createAnthropicSubscriptionOAuth({
+    const refreshed = await createClaudeSubscriptionOAuth({
       fetch: async (_input, init) => {
         s.tokenHeaders.push(new Headers(init?.headers));
         return Response.json({

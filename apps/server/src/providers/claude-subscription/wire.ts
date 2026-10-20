@@ -1,37 +1,49 @@
-// Adapted from lidge-jun/opencodex (MIT): src/oauth/anthropic.ts, src/adapters/anthropic.ts;
-// the request identity follows can1357/oh-my-pi (packages/ai/src/providers/anthropic.ts).
+// Adapted from can1357/oh-my-pi (MIT) and lidge-jun/opencodex (MIT): packages/ai/src/providers/{anthropic,anthropic-identity}.ts,
+// catalog provider-models/openai-compat.ts (model discovery headers); opencodex src/adapters/anthropic.ts.
 import type { PreparedRequest } from "../anthropic.ts";
 import type { OpenAIChunk } from "../chunks.ts";
 import { isRecord } from "../anthropic/json.ts";
 import {
+  ACCOUNT_BETAS,
   ACCOUNT_UUID_KEY,
+  AGENT_BETAS,
   BUILTIN_TOOLS,
   CLAUDE_CODE_HEADERS,
   EFFORT_BETA,
-  MESSAGES_BETAS,
-  OAUTH_BETA,
   SYSTEM_INSTRUCTION,
   TOOL_PREFIX,
+  UTILITY_BETAS,
 } from "./constants.ts";
 import { billingHeader, cliUserAgent, metadataUserId, sessionId, signBody } from "./identity.ts";
 
 /** The most `cache_control` breakpoints one Messages request may carry. */
 const MAX_CACHE_BREAKPOINTS = 4;
 
-/** Credential headers; a Messages request also carries the Claude Code client fingerprint. */
+/**
+ * Credential headers. Account routes (model discovery) carry omp's discovery headers; a Messages request
+ * carries the Claude Code client fingerprint instead (its `anthropic-beta` comes from the prepared request).
+ */
 export function subscriptionHeaders(
   token: string,
   purpose: "models" | "messages",
 ): Record<string, string> {
-  const headers: Record<string, string> = {
+  if (purpose === "models") {
+    return {
+      accept: "application/json",
+      authorization: `Bearer ${token}`,
+      "anthropic-beta": ACCOUNT_BETAS,
+      "anthropic-dangerous-direct-browser-access": "true",
+    };
+  }
+  return {
     authorization: `Bearer ${token}`,
-    "anthropic-beta": OAUTH_BETA,
     "user-agent": cliUserAgent(),
+    ...CLAUDE_CODE_HEADERS,
+    // The SDK asks for JSON even when the body asks for a stream.
+    accept: "application/json",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    connection: "keep-alive",
   };
-  // The SDK asks for JSON even when the body asks for a stream.
-  if (purpose === "messages")
-    Object.assign(headers, CLAUDE_CODE_HEADERS, { accept: "application/json" });
-  return headers;
 }
 
 const toWire = (name: string) =>
@@ -82,10 +94,22 @@ function cacheBreakpoints(payload: Record<string, unknown>): number {
   return blocks.filter((block) => isRecord(block) && block.cache_control !== undefined).length;
 }
 
-/** Whether the request asks for extended thinking, which Claude Code announces with the effort beta. */
-const thinks = (payload: Record<string, unknown>) =>
-  isRecord(payload.thinking) &&
-  (payload.thinking.type === "enabled" || payload.thinking.type === "adaptive");
+/**
+ * omp's beta profile: an agent request (tools or thinking) carries Claude Code's agent betas, anything
+ * else the utility ones; the effort beta rides with thinking and with any effort the body pins.
+ */
+function messagesBetas(payload: Record<string, unknown>): string {
+  const { thinking: thinkingConfig, output_config: outputConfig, tools } = payload;
+  const thinking =
+    isRecord(thinkingConfig) &&
+    (thinkingConfig.type === "enabled" || thinkingConfig.type === "adaptive");
+  const agent = thinking || (Array.isArray(tools) && tools.length > 0);
+  const effort = isRecord(outputConfig) && outputConfig.effort !== undefined;
+  return [
+    ...(agent ? AGENT_BETAS : UTILITY_BETAS),
+    ...(thinking || effort ? [EFFORT_BETA] : []),
+  ].join(",");
+}
 
 /**
  * A subscription request is a Claude Code request: a billing block (CLI version, fingerprint, signed
@@ -108,14 +132,19 @@ export function prepareSubscriptionRequest(
 
   const identity: Record<string, unknown> = { type: "text", text: SYSTEM_INSTRUCTION };
   if (cacheBreakpoints({ ...payload, system: userSystem }) < MAX_CACHE_BREAKPOINTS) {
-    identity.cache_control = { type: "ephemeral" };
+    // omp's OAuth default is a 1h breakpoint (Claude Code's own policy). The API refuses a 1h breakpoint
+    // that follows a shorter one, and tools come before the system prompt: a client that cached a tool
+    // keeps the default 5-minute lifetime.
+    const toolCached = Array.isArray(tools) && tools.some((t) => isRecord(t) && t.cache_control);
+    identity.cache_control = toolCached ? { type: "ephemeral" } : { type: "ephemeral", ttl: "1h" };
   }
   const out: Record<string, unknown> = {
     ...payload,
     system: [{ type: "text", text: billingHeader(text) }, identity, ...userSystem],
     metadata: { user_id: metadataUserId(accountUuid ?? token, session, accountUuid) },
   };
-  if (Array.isArray(tools)) out.tools = tools.map(renamed);
+  // An OAuth request always names its tools, even when there are none.
+  out.tools = Array.isArray(tools) ? tools.map(renamed) : [];
   if (toolChoice !== undefined) out.tool_choice = renamed(toolChoice);
   if (Array.isArray(messages)) {
     out.messages = messages.map((message) =>
@@ -132,9 +161,8 @@ export function prepareSubscriptionRequest(
   return {
     body: signBody(JSON.stringify(out)),
     headers: {
-      "anthropic-beta": [...MESSAGES_BETAS, ...(thinks(payload) ? [EFFORT_BETA] : [])].join(","),
+      "anthropic-beta": messagesBetas(payload),
       "X-Claude-Code-Session-Id": session,
-      "x-client-request-id": crypto.randomUUID(),
     },
   };
 }
