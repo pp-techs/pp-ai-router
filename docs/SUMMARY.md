@@ -48,7 +48,7 @@ Product goals, use cases, business rules, and constraints.
 
 Per-package READMEs next to the code.
 
-| File                                              | Description                                                                                                        |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| [apps/server/README.md](../apps/server/README.md) | Concepts, API, per-provider (Anthropic, Anthropic Subscription, Antigravity, Kiro) behaviour and ported-from notes |
-| [apps/web/README.md](../apps/web/README.md)       | Admin UI dev workflow and conventions                                                                              |
+| File                                              | Description                                                                                                     |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| [apps/server/README.md](../apps/server/README.md) | Concepts, API, per-provider (Anthropic, Claude Subscription, Antigravity, Kiro) behaviour and ported-from notes |
+| [apps/web/README.md](../apps/web/README.md)       | Admin UI dev workflow and conventions                                                                           |

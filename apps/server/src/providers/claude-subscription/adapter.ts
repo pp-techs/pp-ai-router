@@ -1,9 +1,9 @@
-// Adapted from lidge-jun/opencodex (MIT); the Claude Code identity follows can1357/oh-my-pi
+// Adapted from can1357/oh-my-pi (MIT) and lidge-jun/opencodex (MIT)
 import type { ProviderAdapter } from "../adapter.ts";
 import { createAnthropicAdapter } from "../anthropic.ts";
 import { DEFAULT_BASE_URL } from "./constants.ts";
 import { adoptRequiredVersion } from "./identity.ts";
-import { createAnthropicSubscriptionOAuth, type OAuthDeps } from "./oauth.ts";
+import { createClaudeSubscriptionOAuth, type OAuthDeps } from "./oauth.ts";
 import { fetchAnthropicQuota, modelScope, parseRateLimitHeaders } from "./quota.ts";
 import { prepareSubscriptionRequest, restoreToolNames, subscriptionHeaders } from "./wire.ts";
 
@@ -15,13 +15,13 @@ import { prepareSubscriptionRequest, restoreToolNames, subscriptionHeaders } fro
  * presented version up and resends once. Every answer's rate-limit headers update the account's quota,
  * and Opus/Sonnet/Fable/Mythos are separate model scopes of it.
  */
-export function createAnthropicSubscriptionAdapter(deps: OAuthDeps = {}): ProviderAdapter {
+export function createClaudeSubscriptionAdapter(deps: OAuthDeps = {}): ProviderAdapter {
   const doFetch = deps.fetch ?? fetch;
   return createAnthropicAdapter({
-    type: "anthropic-subscription",
-    label: "Anthropic Subscription",
+    type: "claude-subscription",
+    label: "Claude (Pro/Max)",
     defaultBaseUrl: DEFAULT_BASE_URL,
-    oauth: createAnthropicSubscriptionOAuth(deps),
+    oauth: createClaudeSubscriptionOAuth(deps),
     quota: (input) => fetchAnthropicQuota(input, doFetch),
     modelScope,
     readAllowance: parseRateLimitHeaders,
@@ -33,4 +33,4 @@ export function createAnthropicSubscriptionAdapter(deps: OAuthDeps = {}): Provid
   });
 }
 
-export const anthropicSubscription = createAnthropicSubscriptionAdapter();
+export const claudeSubscription = createClaudeSubscriptionAdapter();

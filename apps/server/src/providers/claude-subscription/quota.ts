@@ -1,4 +1,5 @@
-// Adapted from lidge-jun/opencodex (MIT): src/providers/quota/vendor-probes-oauth.ts
+// Adapted from can1357/oh-my-pi (MIT) and lidge-jun/opencodex (MIT): omp packages/ai/src/usage/{claude,claude-api}.ts;
+// opencodex src/providers/quota/vendor-probes-oauth.ts.
 import {
   QuotaError,
   type ModelScope,
@@ -14,7 +15,7 @@ import {
   normalizeResetAt,
   readQuotaJson,
 } from "../../quota/wire.ts";
-import { USAGE_BETA } from "./constants.ts";
+import { ACCOUNT_BETAS } from "./constants.ts";
 import { cliUserAgent } from "./identity.ts";
 
 /** Model families the usage endpoint reports a weekly allowance for, by the word in their display name. */
@@ -89,14 +90,24 @@ function sharedExhaustion(shared: QuotaWindow[]): Pick<Quota, "exhausted" | "res
 export function parseUsage(body: unknown): Quota | null {
   const usage = asRecord(body);
   if (!usage) return null;
+  const limits = Array.isArray(usage.limits) ? usage.limits : [];
+
+  /** An account-wide window that older payloads carry only as a `limits` entry (`session`, `weekly_all`). */
+  const limitBucket = (kind: string) => {
+    const entry = limits
+      .map(asRecord)
+      .find((l) => typeof l?.kind === "string" && l.kind.trim().toLowerCase() === kind);
+    return entry ? { utilization: entry.percent, resets_at: entry.resets_at } : undefined;
+  };
 
   const shared = [
-    bucketWindow("5h", usage.five_hour),
-    bucketWindow("Weekly", usage.seven_day),
+    bucketWindow("5h", usage.five_hour) ?? bucketWindow("5h", limitBucket("session")),
+    bucketWindow("Weekly", usage.seven_day) ?? bucketWindow("Weekly", limitBucket("weekly_all")),
   ].filter((w): w is QuotaWindow => w !== null);
 
   const scoped = new Map<string, QuotaWindow>();
-  for (const family of FAMILIES) {
+  // The legacy per-model buckets omp reads; Fable and Mythos only ever arrive as scoped `limits` entries.
+  for (const family of ["Opus", "Sonnet"]) {
     const window = bucketWindow(
       `${family} weekly`,
       usage[`seven_day_${family.toLowerCase()}`],
@@ -104,7 +115,7 @@ export function parseUsage(body: unknown): Quota | null {
     );
     if (window) scoped.set(window.label, window);
   }
-  for (const raw of Array.isArray(usage.limits) ? usage.limits : []) {
+  for (const raw of limits) {
     const window = scopedLimitWindow(raw);
     if (window && !scoped.has(window.label)) scoped.set(window.label, window);
   }
@@ -154,32 +165,83 @@ export function parseRateLimitHeaders(headers: Headers): Quota | null {
   return windows.length > 0 ? { windows, credits: null, ...sharedExhaustion(shared) } : null;
 }
 
-/** One account's usage, read with that account's own token. */
+/** The canonical account API root; `${root}/api/oauth/usage` is the subscription usage route. */
+const DEFAULT_API_ROOT = "https://api.anthropic.com";
+
+/** Statuses that answer "this host does not implement the endpoint" (omp's `ENDPOINT_ABSENT_STATUSES`). */
+const ENDPOINT_ABSENT_STATUSES: readonly number[] = [404, 405, 410, 501];
+
+/**
+ * omp's `normalizeClaudeApiBaseUrl`: the API root of a Messages (`/v1`) or OAuth (`/api/oauth`) base URL,
+ * keeping a proxy's path prefix; the canonical root when the URL is unusable.
+ */
+function apiRoot(baseUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(baseUrl.trim());
+  } catch {
+    return DEFAULT_API_ROOT;
+  }
+  let path = url.pathname.replace(/\/+$/, "");
+  const lower = path.toLowerCase();
+  if (lower.endsWith("/api/oauth")) path = path.slice(0, -"/api/oauth".length);
+  else if (lower.endsWith("/v1")) path = path.slice(0, -"/v1".length);
+  return `${url.origin}${path}`;
+}
+
+/**
+ * One account's usage, read with that account's own token. A host that does not serve the endpoint is
+ * given up on for the canonical one (omp's `claudeOAuthBaseUrls`); any other failure is that host's
+ * answer about this account. The provider's custom headers go only to the configured host.
+ */
 export async function fetchAnthropicQuota(
   { baseUrl, token, headers, signal }: QuotaCall,
   doFetch: typeof fetch,
 ): Promise<Quota> {
-  let res: Response;
-  try {
-    res = await doFetch(new URL("/api/oauth/usage", baseUrl), {
-      headers: {
-        accept: "application/json, text/plain, */*",
-        "content-type": "application/json",
-        "user-agent": cliUserAgent(),
-        "anthropic-beta": USAGE_BETA,
-        authorization: `Bearer ${token}`,
-        ...headers,
-      },
-      signal,
-    });
-  } catch (error) {
-    throw new QuotaError(failureForError(error));
+  const urls = [
+    ...new Set([`${apiRoot(baseUrl)}/api/oauth/usage`, `${DEFAULT_API_ROOT}/api/oauth/usage`]),
+  ];
+  for (const [index, url] of urls.entries()) {
+    const last = index === urls.length - 1;
+    let res: Response;
+    try {
+      res = await doFetch(url, {
+        headers: {
+          accept: "application/json, text/plain, */*",
+          "accept-encoding": "gzip, compress, deflate, br",
+          "anthropic-beta": ACCOUNT_BETAS,
+          "content-type": "application/json",
+          connection: "keep-alive",
+          "user-agent": cliUserAgent(),
+          authorization: `Bearer ${token}`,
+          ...(index === 0 ? headers : {}),
+        },
+        signal,
+      });
+    } catch (error) {
+      throw new QuotaError(failureForError(error));
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      if (!last && ENDPOINT_ABSENT_STATUSES.includes(res.status)) continue;
+      throw new QuotaError(failureForStatus(res.status), res.status);
+    }
+    let body: unknown;
+    try {
+      body = await readQuotaJson(res);
+    } catch (error) {
+      if (!last && error instanceof QuotaError && error.code === "response_unusable") continue;
+      throw error;
+    }
+    const quota = parseUsage(body);
+    if (quota) return quota;
+    // A body with none of the usage keys is a host answering something else at this path (omp's `looksLikeUsagePayload`).
+    const usageShaped =
+      asRecord(body) !== null &&
+      ["five_hour", "seven_day", "limits", "extra_usage", "spend"].some(
+        (key) => key in (body as object),
+      );
+    if (last || usageShaped) throw new QuotaError("response_unusable");
   }
-  if (!res.ok) {
-    await res.body?.cancel().catch(() => {});
-    throw new QuotaError(failureForStatus(res.status), res.status);
-  }
-  const quota = parseUsage(await readQuotaJson(res));
-  if (!quota) throw new QuotaError("response_unusable");
-  return quota;
+  throw new QuotaError("response_unusable");
 }

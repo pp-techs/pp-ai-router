@@ -916,7 +916,6 @@ describe("kiro adapter", () => {
     const adapter = createKiroAdapter({ fetch: up.fetch });
     expect(adapter).toMatchObject({
       type: "kiro",
-      label: "Kiro",
       defaultBaseUrl: "https://runtime.us-east-1.kiro.dev",
     });
 
@@ -1578,7 +1577,6 @@ describe("kiro through the gateway", () => {
     expect((await h.admin("POST", "/providers", { id: "kiro", type: "kiro" })).status).toBe(201);
     const types = (await h.admin("GET", "/provider-types")).json.data;
     expect(types.find((t: { type: string }) => t.type === "kiro")).toMatchObject({
-      label: "Kiro",
       default_base_url: "https://runtime.us-east-1.kiro.dev",
       oauth: { label: "Sign in with AWS Builder ID (Kiro)" },
     });

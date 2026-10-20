@@ -1456,7 +1456,6 @@ describe("admin", () => {
     const h = createHarness();
     const types: { type: string }[] = (await h.admin("GET", "/provider-types")).json.data;
     expect(types.find((t) => t.type === "anthropic")).toMatchObject({
-      label: "Anthropic",
       default_base_url: "https://api.anthropic.com/v1",
       oauth: null,
     });

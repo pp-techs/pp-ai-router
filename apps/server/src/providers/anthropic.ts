@@ -198,7 +198,7 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
 /** API-key access (`x-api-key`). */
 export const anthropic = createAnthropicAdapter({
   type: "anthropic",
-  label: "Anthropic",
+  label: "Anthropic API",
   defaultBaseUrl: "https://api.anthropic.com/v1",
   headers: (token) => ({ "x-api-key": token }),
 });

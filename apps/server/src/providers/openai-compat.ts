@@ -4,7 +4,7 @@ import { httpError, parseOpenAiModels } from "./model-list.ts";
 /** Any endpoint that speaks OpenAI `/chat/completions` (OpenAI, OpenRouter, Groq, DeepSeek, vLLM, Ollama, ...). */
 export const openAiCompat: ProviderAdapter = {
   type: "openai-compat",
-  label: "OpenAI-compatible",
+  label: "OpenAI-compatible API",
   defaultBaseUrl: null,
   call({ baseUrl, token, headers, body, signal }) {
     return fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {

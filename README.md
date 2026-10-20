@@ -1,7 +1,7 @@
 # pp-ai-router
 
 LLM/AI router: one OpenAI- and Anthropic-compatible endpoint in front of many upstream providers
-(OpenAI-compatible APIs, Anthropic, and subscription/OAuth accounts such as Claude Pro/Max, Kiro and
+(OpenAI-compatible APIs, Anthropic, and subscription/OAuth accounts such as Claude Pro/Max, ChatGPT/Codex, Kiro and
 Google Antigravity), with virtual keys, budgets, multi-credential load balancing and model pricing.
 
 - [`apps/server`](apps/server/README.md): router + admin API (Node 24, Hono, SQLite)
@@ -10,7 +10,7 @@ Google Antigravity), with virtual keys, budgets, multi-credential load balancing
 
 ## Credits
 
-The Anthropic (API key and Claude Pro/Max subscription), Kiro and Google Antigravity provider adapters (`apps/server/src/providers/`) are adapted from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex) (MIT), a local proxy for Codex and Claude Code. The router, key/budget governance, credential pool, pricing and admin UI are original to this project. See [what was ported](docs/project-pdr/opencodex-origin.md).
+The Anthropic (API key and Claude Pro/Max subscription), Codex subscription, Kiro and Google Antigravity provider adapters (`apps/server/src/providers/`) are adapted from [lidge-jun/opencodex](https://github.com/lidge-jun/opencodex) (MIT), a local proxy for Codex and Claude Code. The router, key/budget governance, credential pool, pricing and admin UI are original to this project. See [what was ported](docs/project-pdr/opencodex-origin.md).
 
 ## Documentation
 

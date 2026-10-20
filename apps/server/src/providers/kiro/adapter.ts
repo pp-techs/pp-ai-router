@@ -97,7 +97,7 @@ export function createKiroAdapter(options: KiroOAuthOptions = {}): ProviderAdapt
 
   return {
     type: "kiro",
-    label: "Kiro",
+    label: "Kiro (AWS)",
     defaultBaseUrl: KIRO_DEFAULT_BASE_URL,
     oauth: createKiroOAuth(options),
     staticModels: KIRO_MODELS,

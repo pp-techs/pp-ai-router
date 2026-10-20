@@ -1,5 +1,6 @@
-// Adapted from lidge-jun/opencodex (MIT): src/oauth/anthropic.ts; scopes, refresh headers and the
-// organization/bootstrap identity follow can1357/oh-my-pi (registry/oauth/anthropic.ts, rules/auth/anthropic.kdl).
+// Adapted from can1357/oh-my-pi (MIT) and lidge-jun/opencodex (MIT): omp registry/oauth/anthropic.ts,
+// rules/auth/anthropic.kdl, registry/engine/{common,oauth-code,refresh}.ts, error/flags.ts (refresh classification);
+// opencodex src/oauth/anthropic.ts (paste-login shape).
 import { randomBytes } from "node:crypto";
 import { generatePkce, parseCallbackInput } from "../../oauth/paste.ts";
 import { OAuthRefreshError, type OAuthProvider, type OAuthTokens } from "../../oauth/types.ts";
@@ -10,6 +11,7 @@ import {
   BOOTSTRAP_MODEL,
   BOOTSTRAP_URL,
   CLIENT_ID,
+  EXPIRY_SKEW_MS,
   LOGIN_TTL_MS,
   OAUTH_BETA,
   ORG_NAME_KEY,
@@ -34,28 +36,34 @@ export interface LoginState {
 }
 
 /**
- * Codes meaning the refresh token / client itself is no longer valid, as opposed to a passing outage:
- * the reference's revocation codes plus the RFC 6749 client failures.
+ * omp's `isOAuthExpiry` (error/flags.ts): a refresh failure whose text says the grant or the client is dead,
+ * or a bare 401, as opposed to a passing outage. The text is the status and the start of the answer body.
  */
-const TERMINAL_TOKEN_ERRORS: Record<string, true> = {
-  invalid_grant: true,
-  refresh_token_reused: true,
-  revoked: true,
-  revoked_token: true,
-  refresh_token_revoked: true,
-  invalid_client: true,
-  unauthorized_client: true,
-};
+const DEFINITIVE_FAILURE =
+  /invalid_grant|invalid_token|unauthorized_client|\brevoked\b|refresh[\s_]?token.*expired/i;
+const TRANSIENT_FAILURE =
+  /timeout|network|fetch failed|ECONN(?:REFUSED|RESET)|ETIMEDOUT|ETIMEOUT|ENOTFOUND|ENETUNREACH|EHOSTUNREACH|FailedToOpenSocket|EAI_AGAIN|socket hang up|\b(?:408|425|429|5\d{2})\b|rate.?limit|too many requests|temporar|unavailable|forbidden|permission_denied|cloudflare|captcha/i;
 
-/** Token endpoint failure; `code` is the OAuth `error`. Bodies are never kept: they carry grant details. */
+/** Whether a refresh failure with this text means the stored grant is gone for good. */
+const refusesForGood = (evidence: string) =>
+  DEFINITIVE_FAILURE.test(evidence) ||
+  (/\b401\b/.test(evidence) && !TRANSIENT_FAILURE.test(evidence));
+
+/**
+ * Token endpoint failure; `code` is the OAuth `error`. The answer body is classified but never kept in the
+ * message: it carries grant details.
+ */
 class TokenEndpointError extends Error {
   readonly status: number;
   readonly code: string | undefined;
+  /** What `refusesForGood` reads: the status and the start of the answer body. */
+  readonly evidence: string;
 
-  constructor(status: number, code: string | undefined) {
+  constructor(status: number, code: string | undefined, body: string) {
     super(`Anthropic token request failed: ${status}${code ? ` (${code})` : ""}`);
     this.status = status;
     this.code = code;
+    this.evidence = `anthropic token refresh failed: ${status} ${body.slice(0, 500)}`;
   }
 }
 
@@ -78,7 +86,19 @@ interface Identity {
   orgName?: string | undefined;
 }
 
-export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvider<LoginState> {
+/** Which identity fields a token response itself carried (the bootstrap fills the rest). */
+interface NamedIdentity {
+  account: boolean;
+  email: boolean;
+}
+
+/** Tokens read from a token response, and what that response said about the account. */
+interface PayloadTokens {
+  tokens: OAuthTokens;
+  named: NamedIdentity;
+}
+
+export function createClaudeSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvider<LoginState> {
   const doFetch = deps.fetch ?? fetch;
   const now = deps.now ?? Date.now;
 
@@ -88,17 +108,21 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
   ): Promise<Record<string, unknown>> {
     const res = await doFetch(TOKEN_URL, {
       method: "POST",
-      headers: { accept: "application/json", "content-type": "application/json", ...extraHeaders },
+      headers: { "content-type": "application/json", ...extraHeaders },
       body: JSON.stringify(body),
       // A redirect may follow a completed POST and a token rotation: it is an unknown outcome, not a refusal.
       redirect: "manual",
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!res.ok) {
-      const failure: unknown = await res.json().catch(() => undefined);
-      throw new TokenEndpointError(res.status, errorCode(failure));
-    }
-    const payload: unknown = await res.json().catch(() => undefined);
+    const answer = await res.text().catch(() => "");
+    const payload: unknown = (() => {
+      try {
+        return JSON.parse(answer);
+      } catch {
+        return undefined;
+      }
+    })();
+    if (!res.ok) throw new TokenEndpointError(res.status, errorCode(payload), answer);
     if (!isRecord(payload)) throw new Error("Anthropic token response was not a JSON object");
     return payload;
   }
@@ -127,7 +151,7 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
       const found = isRecord(body) && isRecord(body.oauth_account) ? body.oauth_account : {};
       return {
         uuid: text(found.account_uuid),
-        email: text(found.account_email)?.toLowerCase(),
+        email: text(found.account_email),
         orgUuid: text(found.organization_uuid),
         orgName: text(found.organization_name),
       };
@@ -143,10 +167,11 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
   async function withIdentity(
     tokens: OAuthTokens,
     phase: "login" | "refresh",
+    named: NamedIdentity,
   ): Promise<OAuthTokens> {
     const { extra } = tokens;
     const missingOrg = phase === "login" && !extra[ORG_UUID_KEY];
-    if (extra[ACCOUNT_UUID_KEY] && tokens.account && !missingOrg) return tokens;
+    if (named.account && named.email && !missingOrg) return tokens;
     const found = await bootstrapIdentity(tokens.accessToken);
     const filled = { ...extra };
     const uuid = extra[ACCOUNT_UUID_KEY] ?? found.uuid;
@@ -155,13 +180,18 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
       if (!filled[ORG_UUID_KEY] && found.orgUuid) filled[ORG_UUID_KEY] = found.orgUuid;
       if (!filled[ORG_NAME_KEY] && found.orgName) filled[ORG_NAME_KEY] = found.orgName;
     }
-    return { ...tokens, account: tokens.account ?? found.email ?? uuid, extra: filled };
+    return {
+      ...tokens,
+      account: named.email ? tokens.account : (found.email ?? tokens.account ?? uuid),
+      extra: filled,
+    };
   }
 
+  /** What the token response says about the account; `named` tells which identity fields it carried. */
   function tokensFromPayload(
     payload: Record<string, unknown>,
     previous: OAuthTokens | null,
-  ): OAuthTokens {
+  ): PayloadTokens {
     const {
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -172,10 +202,13 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
     const refresh =
       typeof refreshToken === "string" && refreshToken ? refreshToken : previous?.refreshToken;
     if (!refresh) throw new Error("Anthropic token response did not include a refresh token");
+    // omp has no fallback lifetime either: a response without one is not a usable token.
+    if (typeof expiresIn !== "number" || !Number.isFinite(expiresIn))
+      throw new Error("Anthropic token response did not include expires_in");
 
     const account = isRecord(payload.account) ? payload.account : undefined;
     const uuid = text(account?.uuid);
-    const email = text(account?.email_address)?.toLowerCase();
+    const email = text(account?.email_address);
     const extra = { ...previous?.extra };
     if (uuid) extra[ACCOUNT_UUID_KEY] = uuid;
     // The organization is fixed when the account signs in; a refresh carries it over untouched.
@@ -186,17 +219,15 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
       if (orgUuid) extra[ORG_UUID_KEY] = orgUuid;
       if (orgName) extra[ORG_NAME_KEY] = orgName;
     }
-    // A missing, negative, non-finite or overflowing lifetime would never compare as expired: use an hour.
-    const lifetimeSeconds =
-      typeof expiresIn === "number" && expiresIn >= 0 && Number.isFinite(expiresIn * 1000)
-        ? expiresIn
-        : 3600;
     return {
-      accessToken,
-      refreshToken: refresh,
-      expiresAt: now() + lifetimeSeconds * 1000,
-      account: email ?? previous?.account ?? uuid,
-      extra,
+      tokens: {
+        accessToken,
+        refreshToken: refresh,
+        expiresAt: now() + expiresIn * 1000 - EXPIRY_SKEW_MS,
+        account: email ?? previous?.account ?? uuid,
+        extra,
+      },
+      named: { account: uuid !== undefined, email: email !== undefined },
     };
   }
 
@@ -244,7 +275,8 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
         redirect_uri: REDIRECT_URI,
         code_verifier: session.verifier,
       });
-      return withIdentity(tokensFromPayload(payload, null), "login");
+      const { tokens, named } = tokensFromPayload(payload, null);
+      return withIdentity(tokens, "login", named);
     },
 
     async refresh(tokens) {
@@ -263,20 +295,16 @@ export function createAnthropicSubscriptionOAuth(deps: OAuthDeps = {}): OAuthPro
           { "anthropic-beta": OAUTH_BETA, "user-agent": REFRESH_USER_AGENT },
         );
       } catch (error) {
-        const terminal =
-          error instanceof TokenEndpointError &&
-          (error.status === 400 || error.status === 401) &&
-          error.code !== undefined &&
-          Object.hasOwn(TERMINAL_TOKEN_ERRORS, error.code);
+        const terminal = error instanceof TokenEndpointError && refusesForGood(error.evidence);
         throw new OAuthRefreshError((error as Error).message, terminal, { cause: error });
       }
-      let refreshed: OAuthTokens;
+      let refreshed: PayloadTokens;
       try {
         refreshed = tokensFromPayload(payload, tokens);
       } catch (error) {
         throw new OAuthRefreshError((error as Error).message, false, { cause: error });
       }
-      return withIdentity(refreshed, "refresh");
+      return withIdentity(refreshed.tokens, "refresh", refreshed.named);
     },
   };
 }
