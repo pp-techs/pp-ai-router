@@ -1,5 +1,11 @@
 # web
 
+## 0.17.0
+
+### Patch Changes
+
+- 94bf42a: The sign-in dialog no longer overflows its width when a long redirect URL is pasted: the field keeps the dialog's width and wraps the URL.
+
 ## 0.16.0
 
 No changes in this release.
