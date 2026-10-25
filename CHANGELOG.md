@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.18.0] — 2026-10-25
+
+Anthropic and Claude subscription: a tool whose root schema is a `oneOf`/`anyOf`/`allOf` now keeps every declaration of a property that its variants declare differently (nested `anyOf`, `allOf` for a root `allOf`; a declaration also present on the root is combined with it under `allOf`) instead of the last one winning, and requires the keys every `anyOf`/`oneOf` variant requires (oh-my-pi `0d20eee217`). The opencodex changes since `994d15e8a` do not touch the Antigravity, Kiro or ChatGPT wire behaviour.
+
 ## [0.17.0] — 2026-10-20
 
 The sign-in dialog no longer overflows its width when a long redirect URL is pasted: the field keeps the dialog's width and wraps the URL.
