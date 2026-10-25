@@ -264,10 +264,14 @@ function foldVariants(
     else shared = shared ? shared.filter((r) => needs.includes(r)) : needs;
   }
   for (const r of shared ?? []) required.add(r);
-  // A key the root already declares keeps that declaration: both must hold.
+  // A key the root (or an earlier combinator) already declares must satisfy both declarations.
   for (const [name, list] of declared) {
-    if (Object.hasOwn(properties, name)) continue;
-    properties[name] = list.length === 1 ? list[0] : { [conjunctive ? "allOf" : "anyOf"]: list };
+    const merged = list.length === 1 ? list[0] : { [conjunctive ? "allOf" : "anyOf"]: list };
+    const existing = properties[name];
+    properties[name] =
+      !Object.hasOwn(properties, name) || isDeepStrictEqual(existing, merged)
+        ? merged
+        : { allOf: [existing, merged] };
   }
 }
 

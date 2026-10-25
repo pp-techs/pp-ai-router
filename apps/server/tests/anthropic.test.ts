@@ -280,6 +280,33 @@ describe("anthropic adapter: request mapping", () => {
     ]);
   });
 
+  it("keeps both the root and the variant declaration of the same property", async () => {
+    const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "ok" }]));
+    await chat(h, key, {
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "id",
+            parameters: {
+              properties: { id: { type: "string" } },
+              allOf: [{ type: "object", properties: { id: { minLength: 3 } } }],
+            },
+          },
+        },
+      ],
+    });
+    expect(up.calls[0]!.body.tools).toEqual([
+      {
+        name: "id",
+        input_schema: {
+          type: "object",
+          properties: { id: { allOf: [{ type: "string" }, { minLength: 3 }] } },
+        },
+      },
+    ]);
+  });
+
   it("turns assistant tool_calls into tool_use and tool messages into tool_result blocks", async () => {
     const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "done" }]));
     await chat(h, key, {
