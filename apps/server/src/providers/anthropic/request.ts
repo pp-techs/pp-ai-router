@@ -3,6 +3,7 @@
  * Canonical OpenAI chat-completions request -> Anthropic Messages request body.
  * https://platform.claude.com/docs/en/api/messages/create
  */
+import { isDeepStrictEqual } from "node:util";
 import { isRecord, str } from "./json.ts";
 import { normalizeOutputSchema } from "./output-schema.ts";
 import {
@@ -209,7 +210,12 @@ function repairToolPairs(messages: AnthropicMessage[]): void {
   }
 }
 
-/** Anthropic rejects `input_schema` roots that lack `type: "object"` or use oneOf/anyOf/allOf. */
+/**
+ * Anthropic rejects `input_schema` roots that lack `type: "object"` or use oneOf/anyOf/allOf, so the
+ * variants fold into the root: properties merge (a key declared differently by several variants keeps
+ * every declaration under a nested `anyOf`, `allOf` for a root `allOf`), and `required` gains the keys
+ * every `anyOf`/`oneOf` variant requires or any `allOf` branch requires.
+ */
 function inputSchema(schema: unknown): Json {
   const obj = isRecord(schema) ? schema : {};
   const properties: Json = isRecord(obj.properties) ? { ...obj.properties } : {};
@@ -221,13 +227,7 @@ function inputSchema(schema: unknown): Json {
   for (const [key, value] of Object.entries(obj)) {
     if (key === "oneOf" || key === "anyOf" || key === "allOf") {
       composed = true;
-      for (const variant of Array.isArray(value) ? value : []) {
-        if (!isRecord(variant)) continue;
-        if (isRecord(variant.properties)) Object.assign(properties, variant.properties);
-        if (key === "allOf" && Array.isArray(variant.required)) {
-          for (const r of variant.required) if (typeof r === "string") required.add(r);
-        }
-      }
+      foldVariants(key, Array.isArray(value) ? value : [], properties, required);
     } else if (key !== "type" && key !== "properties" && key !== "required") {
       out[key] = value;
     }
@@ -237,6 +237,38 @@ function inputSchema(schema: unknown): Json {
   if (required.size > 0) out.required = [...required];
   else if (!composed && Array.isArray(obj.required)) out.required = obj.required;
   return out;
+}
+
+function foldVariants(
+  key: "oneOf" | "anyOf" | "allOf",
+  variants: unknown[],
+  properties: Json,
+  required: Set<string>,
+): void {
+  const conjunctive = key === "allOf";
+  const declared = new Map<string, unknown[]>();
+  let shared: string[] | undefined;
+  for (const variant of variants) {
+    if (!isRecord(variant)) continue;
+    if (isRecord(variant.properties)) {
+      for (const [name, declaration] of Object.entries(variant.properties)) {
+        const list = declared.get(name) ?? [];
+        if (!list.some((entry) => isDeepStrictEqual(entry, declaration))) list.push(declaration);
+        declared.set(name, list);
+      }
+    }
+    const needs = Array.isArray(variant.required)
+      ? variant.required.filter((r): r is string => typeof r === "string")
+      : [];
+    if (conjunctive) for (const r of needs) required.add(r);
+    else shared = shared ? shared.filter((r) => needs.includes(r)) : needs;
+  }
+  for (const r of shared ?? []) required.add(r);
+  // A key the root already declares keeps that declaration: both must hold.
+  for (const [name, list] of declared) {
+    if (Object.hasOwn(properties, name)) continue;
+    properties[name] = list.length === 1 ? list[0] : { [conjunctive ? "allOf" : "anyOf"]: list };
+  }
 }
 
 function toTools(tools: unknown): Block[] | undefined {

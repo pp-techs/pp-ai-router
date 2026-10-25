@@ -242,6 +242,44 @@ describe("anthropic adapter: request mapping", () => {
     ]);
   });
 
+  it("keeps conflicting root-variant declarations and the keys every variant requires", async () => {
+    const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "ok" }]));
+    await chat(h, key, {
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "mode",
+            parameters: {
+              oneOf: [
+                {
+                  type: "object",
+                  properties: { kind: { const: "a" }, id: { type: "string" } },
+                  required: ["kind", "id"],
+                },
+                {
+                  type: "object",
+                  properties: { kind: { const: "b" }, id: { type: "string" } },
+                  required: ["kind"],
+                },
+              ],
+            },
+          },
+        },
+      ],
+    });
+    expect(up.calls[0]!.body.tools).toEqual([
+      {
+        name: "mode",
+        input_schema: {
+          type: "object",
+          properties: { kind: { anyOf: [{ const: "a" }, { const: "b" }] }, id: { type: "string" } },
+          required: ["kind"],
+        },
+      },
+    ]);
+  });
+
   it("turns assistant tool_calls into tool_use and tool messages into tool_result blocks", async () => {
     const { up, h, key } = await claude(() => anthropicMessage([{ type: "text", text: "done" }]));
     await chat(h, key, {
