@@ -91,31 +91,96 @@ function exhaustion(
 }
 
 /**
+ * The per-user credit cap of `spend_control.individual_limit` (omp `parseSpendCap`). Credit-billed workspace
+ * seats (Business/Enterprise flexible pricing) report it instead of `rate_limit` windows, so it is their
+ * only quota signal; beside plan windows it only bounds credit-funded overage.
+ */
+interface SpendCap {
+  /** 0..1; the absolute amounts keep the sub-percent precision the rounded `used_percent` lacks. */
+  usedFraction: number | undefined;
+  /** The backend's verdict (`spend_control.reached`); undefined when omitted. */
+  reached: boolean | undefined;
+  resetsAt: number | null;
+}
+
+function parseSpendCap(usage: Record<string, unknown>, now: number): SpendCap | undefined {
+  const spendControl = asRecord(usage.spend_control);
+  const individual = asRecord(spendControl?.individual_limit);
+  if (!spendControl || !individual) return undefined;
+  const used = toFiniteNumber(individual.used);
+  const limit = toFiniteNumber(individual.limit);
+  const remaining = toFiniteNumber(individual.remaining);
+  const usedPercent = toFiniteNumber(individual.used_percent);
+  // A bare `remaining` of zero still proves the cap has no headroom.
+  const fraction =
+    used !== undefined && limit !== undefined && limit > 0
+      ? used / limit
+      : usedPercent !== undefined
+        ? usedPercent / 100
+        : remaining !== undefined && remaining <= 0
+          ? 1
+          : undefined;
+  if (
+    used === undefined &&
+    limit === undefined &&
+    remaining === undefined &&
+    fraction === undefined
+  )
+    return undefined;
+  const after = toFiniteNumber(individual.reset_after_seconds);
+  return {
+    usedFraction: fraction === undefined ? undefined : Math.min(1, Math.max(0, fraction)),
+    reached: typeof spendControl.reached === "boolean" ? spendControl.reached : undefined,
+    resetsAt:
+      normalizeResetAt(individual.reset_at) ??
+      (after !== undefined && after >= 0 ? now + after * 1000 : null),
+  };
+}
+
+/** The spend cap as a meter; the verdict outranks the advisory percentage in both directions (omp `buildSpendCapLimit`). */
+function spendCapWindow(cap: SpendCap): QuotaWindow | null {
+  const usedPercent = cap.reached === true ? 100 : (cap.usedFraction ?? Number.NaN) * 100;
+  if (Number.isNaN(usedPercent)) return null;
+  return { label: "Spend cap", usedPercent, resetsAt: cap.resetsAt };
+}
+
+/**
  * Whether paid credits keep the account serving past a spent plan window (omp `hasPlanCreditOverage`).
  * `/wham/usage` only describes the plan's allowance; the Codex CLI itself never gates on it, so an
- * account with credits is not parked. Only a spent plan verdict (`limit_reached: true`) is covered.
+ * account with credits is not parked. Only a spent plan verdict (`limit_reached: true`) is covered, and
+ * not when the spend cap says no (a cap with no verdict whose counters show no headroom cannot fund it).
  */
-function creditsCoverOverage(usage: Record<string, unknown>, planLimitReached: unknown): boolean {
+function creditsCoverOverage(
+  usage: Record<string, unknown>,
+  planLimitReached: unknown,
+  cap: SpendCap | undefined,
+): boolean {
   if (planLimitReached !== true) return false;
   const credits = asRecord(usage.credits);
   if (!credits || (credits.unlimited !== true && credits.has_credits !== true)) return false;
   if (credits.overage_limit_reached === true) return false;
-  return asRecord(usage.spend_control)?.reached !== true;
+  if (asRecord(usage.spend_control)?.reached === true) return false;
+  return !(cap && cap.reached === undefined && (cap.usedFraction ?? 0) >= 1);
 }
 
 /**
  * `GET /backend-api/wham/usage`: the plan's short (5-hour) and weekly allowance for the whole account, the
  * account's own verdict (`allowed` / `limit_reached`) and, per metered feature, extra allowances. Only the
- * Spark one maps to models of ours (scoped: a spent one stops those models only, never the account).
+ * Spark one maps to models of ours (scoped: a spent one stops those models only, never the account). A
+ * credit-billed seat has no plan windows: its spend cap is the account's meter and verdict then.
  */
 export function parseUsage(body: unknown, now = Date.now()): Quota | null {
   const usage = asRecord(body);
   const rateLimit = asRecord(usage?.rate_limit);
-  if (!usage || !rateLimit) return null;
+  const cap = usage ? parseSpendCap(usage, now) : undefined;
+  if (!usage || (!rateLimit && !cap)) return null;
 
-  const raw = [rateLimit.primary_window, rateLimit.secondary_window];
+  const raw = rateLimit ? [rateLimit.primary_window, rateLimit.secondary_window] : [];
   const parsed = raw.map((w, i) => usageWindow(w, FALLBACK_LABELS[i]!, now));
-  const shared = uniqueLabels(parsed.filter((w): w is QuotaWindow => w !== null));
+  const plan = parsed.filter((w): w is QuotaWindow => w !== null);
+  const capWindow = cap ? spendCapWindow(cap) : null;
+  // Beside plan windows the cap is display only; without them it is the shared meter.
+  const shared = uniqueLabels(!rateLimit && capWindow ? [capWindow] : plan);
 
   const scoped: QuotaWindow[] = [];
   for (const extra of Array.isArray(usage.additional_rate_limits)
@@ -133,21 +198,31 @@ export function parseUsage(body: unknown, now = Date.now()): Quota | null {
     }
   }
 
-  const windows = [...shared, ...uniqueLabels(scoped)];
+  const windows = [
+    ...shared,
+    ...(rateLimit && capWindow ? [capWindow] : []),
+    ...uniqueLabels(scoped),
+  ];
   if (windows.length === 0) return null;
 
   // An explicit verdict outranks the percentages: a window at 100% that Codex still allows is a warning.
-  const { allowed, limit_reached: limitReached } = rateLimit;
-  const blocked =
-    allowed === false || limitReached === true
-      ? true
-      : allowed === true
-        ? false
-        : shared.some((w) => w.usedPercent >= 100);
+  let blocked: boolean;
+  if (rateLimit) {
+    const { allowed, limit_reached: limitReached } = rateLimit;
+    blocked =
+      (allowed === false || limitReached === true
+        ? true
+        : allowed === true
+          ? false
+          : shared.some((w) => w.usedPercent >= 100)) &&
+      !creditsCoverOverage(usage, limitReached, cap);
+  } else {
+    blocked = cap!.reached ?? (cap!.usedFraction ?? 0) >= 1;
+  }
   return {
     windows,
     credits: null,
-    ...exhaustion(shared, blocked && !creditsCoverOverage(usage, limitReached)),
+    ...exhaustion(shared, blocked),
     // Only a reading of every window the account reports can vouch that a spent Spark window is not a shared wall.
     complete: shared.length > 0 && parsed.filter((w, i) => w === null && raw[i]).length === 0,
   };

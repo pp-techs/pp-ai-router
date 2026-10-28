@@ -21,6 +21,9 @@ const CONTENT_FILTER_REASONS = new Set([
   "SPII",
 ]);
 
+/** Cap on the RPC `details` appended to an in-band error message. */
+const MAX_ERROR_DETAILS_CHARS = 1_000;
+
 /**
  * Google reports `promptTokenCount` INCLUDING the cached part and `candidatesTokenCount` EXCLUDING the
  * thinking tokens (`thoughtsTokenCount`), with `toolUsePromptTokenCount` on the input side. OpenAI
@@ -65,21 +68,35 @@ export class GeminiMapper {
     this.#restoreToolName = opts.restoreToolName;
   }
 
+  /**
+   * An in-band `error` frame as an Error: the message carries the RPC status and, when present, the
+   * `details` (QuotaFailure / RetryInfo / ErrorInfo) so a quota or capacity failure stays
+   * distinguishable from a plain outage.
+   */
+  #upstreamError(error: unknown): Error {
+    const body = isRecord(error) ? error : {};
+    const message = typeof body.message === "string" ? body.message : "";
+    const status = typeof body.status === "string" ? body.status : "";
+    const detail =
+      message && status ? `${message} (${status})` : message || status || "upstream error";
+    // Replayed signatures that upstream rejects must not be sent again.
+    if (/invalid_argument|invalid argument|signature/i.test(`${message} ${status}`)) {
+      clearReplay(this.#wireModelId, this.#sessionId);
+    }
+    const residue =
+      Array.isArray(body.details) && body.details.length > 0
+        ? ` ${JSON.stringify({ error: { status: status || undefined, details: body.details } }).slice(0, MAX_ERROR_DETAILS_CHARS)}`
+        : "";
+    return new Error(`${detail}${residue}`);
+  }
+
   /** Frames that are not JSON objects are padding and skipped; a malformed claimed structure throws. */
   push(frame: unknown): OpenAIChunk[] {
     if (!isRecord(frame)) return [];
     this.#sawFrame = true;
 
     if (frame.error) {
-      const message =
-        isRecord(frame.error) && typeof frame.error.message === "string"
-          ? frame.error.message
-          : "upstream error";
-      // Replayed signatures that upstream rejects must not be sent again.
-      if (/invalid_argument|invalid argument|signature/i.test(message)) {
-        clearReplay(this.#wireModelId, this.#sessionId);
-      }
-      throw new Error(message);
+      throw this.#upstreamError(frame.error);
     }
 
     const root = frame.response;

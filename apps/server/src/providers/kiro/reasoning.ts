@@ -28,6 +28,8 @@ const NATIVE_EFFORT_FIELDS: Record<string, "reasoning" | "output_config"> = {
   "gpt-6-sol": "reasoning",
   "gpt-6-luna": "reasoning",
   "gpt-6.1-sol": "reasoning",
+  // Preemptive (see the reference's kiro-models.ts): GPT-6.1 Terra mirrors GPT-6.1 Sol.
+  "gpt-6.1-terra": "reasoning",
   "claude-opus-5": "output_config",
   "claude-opus-5.5": "output_config",
 };

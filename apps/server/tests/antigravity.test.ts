@@ -1048,6 +1048,19 @@ describe("response mapping", () => {
     await expect(
       run([{ error: { message: "model overloaded", status: "UNAVAILABLE" } }]),
     ).rejects.toThrow("model overloaded");
+    // An in-band RPC error keeps its status and details so a quota failure is distinguishable.
+    await expect(
+      run([
+        {
+          error: {
+            code: 429,
+            message: "quota hit",
+            status: "RESOURCE_EXHAUSTED",
+            details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "30s" }],
+          },
+        },
+      ]),
+    ).rejects.toThrow(/quota hit \(RESOURCE_EXHAUSTED\) .*google\.rpc\.RetryInfo/);
     await expect(run([{ candidates: [] }])).rejects.toThrow(/missing response wrapper/);
     await expect(run([frame({ candidates: [null] })])).rejects.toThrow(/invalid candidate/);
     await expect(run([part([{ functionCall: { args: {} } }])])).rejects.toThrow(

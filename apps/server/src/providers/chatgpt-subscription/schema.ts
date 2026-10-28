@@ -79,6 +79,15 @@ function node(value: unknown): unknown {
   const type = value.type;
   const isObject = type === "object" || (Array.isArray(type) && type.includes("object"));
   if (isObject && !Object.hasOwn(value, "properties")) output.properties = {};
+  // An omitted `items` permits any element, the tail after `prefixItems` included: Codex wants that explicit
+  // (omp `repairArrayItems`, codex only; `items: undefined` counts as omitted, as JSON drops it). A node with
+  // `unevaluatedItems` is left alone, as adding `items` would change which elements that constrains.
+  const isArray =
+    type === "array" ||
+    (Array.isArray(type) && type.includes("array")) ||
+    (type === undefined && Array.isArray(value.prefixItems));
+  if (isArray && value.items === undefined && !Object.hasOwn(value, "unevaluatedItems"))
+    output.items = true;
   return Object.keys(output).length === 0 ? true : output;
 }
 
@@ -106,7 +115,8 @@ function map(schemas: Json, patterns: boolean): Json {
 
 /**
  * A tool's parameter schema as the Responses API takes it: no `oneOf` (it becomes `anyOf`), every object
- * schema has `properties`, no lookaround regexes, and the empty schema is `true`. The parameters
+ * schema has `properties`, every array schema has `items` (open `true` when omitted), no lookaround regexes,
+ * and the empty schema is `true`. The parameters
  * themselves stay an object schema. Draft-07 to 2020-12 upgrading and strict-mode enforcement (omp's
  * `adaptSchemaForStrict`) are not ported.
  */

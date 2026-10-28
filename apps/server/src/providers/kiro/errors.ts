@@ -74,9 +74,11 @@ const AUTH_MARKERS = [
   "invalid token",
 ];
 
-/** A spent allowance (the account's problem), as opposed to a rate ceiling. */
+/** A spent allowance (the account's problem), as opposed to a rate ceiling. `reason` codes: spent monthly count, exhausted overage allowance. */
 const quotaSpent = (text: string) =>
-  text.includes("monthly_request_count") || (any(text, QUOTA_MARKERS) && !RATE_CEILING.test(text));
+  text.includes("monthly_request_count") ||
+  text.includes("overage_request_limit_exceeded") ||
+  (any(text, QUOTA_MARKERS) && !RATE_CEILING.test(text));
 
 /** Short class prefix, in the reference's precedence order. */
 function classPrefix(status: number | undefined, text: string): string {

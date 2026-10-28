@@ -20,6 +20,18 @@ function headerInt(headers: Headers, name: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+/** The later reset of the rate-limit windows the headers report as spent (omp: `used_percent >= 100` with a reset). */
+function exhaustedReset(headers: Headers): number | undefined {
+  let latest: number | undefined;
+  for (const key of ["primary", "secondary"]) {
+    const used = Number(headers.get(`x-codex-${key}-used-percent`)?.trim() || Number.NaN);
+    const reset = headerInt(headers, `x-codex-${key}-reset-at`);
+    if (!(used >= 100) || !reset) continue;
+    latest = Math.max(latest ?? 0, reset);
+  }
+  return latest;
+}
+
 /** What a failure body (`{"error":{...}}`) and the rate-limit headers say; the minutes are to the reset. */
 export interface CodexFailure {
   status: number;
@@ -47,16 +59,23 @@ export function readFailure(
     const error = isRecord(parsed) && isRecord(parsed.error) ? parsed.error : {};
     const raw = error.code ?? error.type;
     code = typeof raw === "string" || typeof raw === "number" ? String(raw) : "";
-    resetsAt =
-      (typeof error.resets_at === "number" && error.resets_at > 0 ? error.resets_at : undefined) ??
+    const bodyReset =
+      typeof error.resets_at === "number" && error.resets_at > 0 ? error.resets_at : undefined;
+    const planReset =
       headerInt(headers, "x-codex-primary-reset-at") ??
       headerInt(headers, "x-codex-secondary-reset-at");
+    const usageLimit = USAGE_LIMIT.test(code);
+    // A usage limit is the plan window's: its reset is the wait. A rate limit (`turn_rate_limit_exceeded`,
+    // "Codex is at capacity") is not: a window with headroom would claim an hours-long wait that outranks the
+    // response's real `retry-after`, so only the error's own `resets_at` or an exhausted window's reset
+    // applies (the later one when both are spent, as that is what unblocks).
+    resetsAt = usageLimit ? (bodyReset ?? planReset) : (bodyReset ?? exhaustedReset(headers));
     const minutes =
       resetsAt === undefined
         ? undefined
         : Math.max(0, Math.round((resetsAt * 1000 - now) / 60_000));
     const when = minutes === undefined ? "" : ` Try again in ~${minutes} min.`;
-    if (USAGE_LIMIT.test(code)) {
+    if (usageLimit) {
       const plan =
         typeof error.plan_type === "string" ? ` (${error.plan_type.toLowerCase()} plan)` : "";
       friendly = `You have hit your ChatGPT usage limit${plan}.${when}`.trim();

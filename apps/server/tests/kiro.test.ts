@@ -1077,6 +1077,16 @@ describe("kiro adapter", () => {
     expect(quota.res.status).toBe(429);
     expect(quota.json.error.code).toBe("insufficient_quota");
 
+    // an exhausted overage allowance is also account quota, whether Kiro answers 400 or 429
+    for (const status of [400, 429]) {
+      const overage = await respondWith(
+        status,
+        '{"__type":"com.amazon.kiro.runtimeservice#ServiceQuotaExceededException","reason":"OVERAGE_REQUEST_LIMIT_EXCEEDED","message":"You have reached the limit for overages."}',
+      );
+      expect(overage.res.status).toBe(429);
+      expect(overage.json.error.code).toBe("insufficient_quota");
+    }
+
     const context = await respondWith(
       400,
       '{"message":"x","reason":"CONTENT_LENGTH_EXCEEDS_THRESHOLD"}',
