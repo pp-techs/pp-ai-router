@@ -18,7 +18,7 @@ Per its own README: a "universal provider proxy for OpenAI Codex & Claude Code".
 
 pp-ai-router is **not** a fork: the router, governance, pool, pricing, admin API and admin UI are original. Only the per-provider protocol translation was ported.
 
-**Last synced with upstream**: v2.83.0-270 + 73 commits (`9f0d40a25`, 2026-10-24) for the `anthropic`, `claude-subscription`, `antigravity`, `chatgpt-subscription` and `kiro` adapters; oh-my-pi compared at `0b5c27ab24`, 2026-10-22. Use this commit as the base for the next `git diff`.
+**Last synced with upstream**: v2.83.0 + 103 commits (`88aaa7545`, 2026-10-27) for the `anthropic`, `claude-subscription`, `antigravity`, `chatgpt-subscription` and `kiro` adapters; oh-my-pi compared at `c3b645cb27` (18.13.2), 2026-10-27. Use this commit as the base for the next `git diff`.
 
 ## What was adapted
 

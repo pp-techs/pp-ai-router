@@ -521,6 +521,31 @@ describe("request translation", () => {
       },
     });
     expect(parameters({})).toEqual({ type: "object", properties: {} });
+    // An array without `items` gets the open `items: true` (omp's codex-only repair), also an own
+    // `items: undefined` and the tail after `prefixItems`; `unevaluatedItems` and a given `items` stay as they are.
+    expect(
+      parameters({
+        type: "object",
+        properties: {
+          list: { type: "array" },
+          dropped: { type: "array", items: undefined },
+          tuple: { prefixItems: [{ type: "string" }] },
+          nullable: { type: ["array", "null"] },
+          typed: { type: "array", items: { type: "string" } },
+          tail: { type: "array", unevaluatedItems: false },
+        },
+      }),
+    ).toEqual({
+      type: "object",
+      properties: {
+        list: { type: "array", items: true },
+        dropped: { type: "array", items: true },
+        tuple: { prefixItems: [{ type: "string" }], items: true },
+        nullable: { type: ["array", "null"], items: true },
+        typed: { type: "array", items: { type: "string" } },
+        tail: { type: "array", unevaluatedItems: false },
+      },
+    });
   });
 
   it("maps response_format and verbosity to the text object", () => {
@@ -982,6 +1007,34 @@ describe("adapter", () => {
       message: "ChatGPT rate limit exceeded.",
     });
 
+    // A rate limit is not the plan window: a window with headroom must not turn a capacity 429 into an
+    // hours-long wait, so the backend's own retry-after stands; an exhausted window's reset (the later one) does count.
+    const capacity =
+      '{"error":{"type":"turn_rate_limit_exceeded","message":"Codex is at capacity"}}';
+    const windows = (primary: number, secondary: number) => ({
+      "retry-after": "5",
+      "x-codex-primary-used-percent": String(primary),
+      "x-codex-primary-reset-at": String(Math.floor(Date.now() / 1000) + 600),
+      "x-codex-secondary-used-percent": String(secondary),
+      "x-codex-secondary-reset-at": String(Math.floor(Date.now() / 1000) + 7200),
+    });
+    const roomy = await respondWith(429, capacity, windows(30, 40));
+    expect(roomy.res.headers.get("retry-after")).toBe("5");
+    expect(JSON.parse(roomy.text).error.message).toBe("ChatGPT rate limit exceeded.");
+    const bare = await respondWith(429, capacity, {
+      "x-codex-primary-used-percent": "30",
+      "x-codex-primary-reset-at": String(Math.floor(Date.now() / 1000) + 600),
+    });
+    expect(bare.res.headers.get("retry-after")).toBeNull();
+    const spent = await respondWith(429, '{"error":{"type":"rate_limit_exceeded"}}', {
+      ...windows(100, 100),
+      "retry-after": "",
+    });
+    expect(Number(spent.res.headers.get("retry-after"))).toBeGreaterThan(7190);
+    expect(JSON.parse(spent.text).error.message).toMatch(
+      /rate limit exceeded\. Try again in ~1\d\d min\./,
+    );
+
     // An account policy denial is a 403, which the gateway answers by trying another account.
     const cyber = await respondWith(
       400,
@@ -1179,6 +1232,48 @@ describe("quota", () => {
       rate({ ...spent, limit_reached: true }, { ...funded, spend_control: { reached: true } })
         .exhausted,
     ).toBe(true);
+  });
+
+  it("reads the spend cap of a credit-billed seat as its only meter and verdict (omp)", () => {
+    const cap = (individual_limit: Record<string, unknown>, reached?: boolean) =>
+      parseUsage({ spend_control: { reached, individual_limit } }, NOW)!;
+    const reset = { reset_at: NOW / 1000 + 600 };
+
+    // No plan windows: the cap is the shared meter, the counters give the exact fraction.
+    expect(cap({ used: "12.5", limit: "100", used_percent: 13, ...reset })).toEqual({
+      windows: [{ label: "Spend cap", usedPercent: 12.5, resetsAt: (NOW / 1000 + 600) * 1000 }],
+      credits: null,
+      exhausted: false,
+      resetsAt: null,
+      complete: true,
+    });
+    // The backend's verdict wins over the advisory percentage, in both directions.
+    expect(cap({ used_percent: 40, ...reset }, true)).toMatchObject({
+      windows: [{ label: "Spend cap", usedPercent: 100 }],
+      exhausted: true,
+      resetsAt: (NOW / 1000 + 600) * 1000,
+    });
+    expect(cap({ used_percent: 100, ...reset }, false).exhausted).toBe(false);
+    // Without a verdict the counters decide, and a bare `remaining: 0` has no headroom either.
+    expect(cap({ used_percent: 100, ...reset }).exhausted).toBe(true);
+    expect(cap({ remaining: 0, ...reset }).exhausted).toBe(true);
+    expect(cap({ remaining: 5 })).toBeNull();
+
+    // Beside plan windows the cap is a display meter; credits cannot fund a plan overage past a spent cap.
+    const planSpent = {
+      rate_limit: {
+        ...USAGE.rate_limit,
+        limit_reached: true,
+        primary_window: { used_percent: 100, limit_window_seconds: 18_000, ...reset },
+      },
+      credits: { has_credits: true, overage_limit_reached: false },
+    };
+    const beside = (individual_limit: Record<string, unknown>) =>
+      parseUsage({ ...planSpent, spend_control: { individual_limit } }, NOW)!;
+    expect(beside({ used: 10, limit: 100 })).toMatchObject({ exhausted: false, complete: true });
+    expect(beside({ used: 10, limit: 100 }).windows.map((w) => w.label)).toContain("Spend cap");
+    expect(beside({ used: 100, limit: 100 }).exhausted).toBe(true);
+    expect(beside({ remaining: 0 }).exhausted).toBe(true);
   });
 
   it("labels windows by their length like omp, and by position when they do not say", () => {

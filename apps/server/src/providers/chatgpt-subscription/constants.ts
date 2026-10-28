@@ -42,7 +42,7 @@ export const JWT_PROFILE_CLAIM = "https://api.openai.com/profile";
 export const ORIGINATOR = "omp";
 export const CLIENT_VERSION = "0.159.0";
 export const OPENAI_BETA = "responses=experimental";
-export const OMP_VERSION = "18.12.2";
+export const OMP_VERSION = "18.13.2";
 export const USER_AGENT = `omp/${OMP_VERSION}`;
 
 /** `POST {base}/responses` for a base ending in `/codex`, `{base}/codex/responses` otherwise (omp `resolveCodexResponsesUrl`). */
