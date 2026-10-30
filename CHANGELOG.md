@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.19.1] — 2026-10-30
+
+`UPSTREAM_TIMEOUT_MS` now defaults to 90s instead of 120s, and is a single deadline shared across every credential/target retry on one client-facing request instead of a fresh window per attempt. Previously a request that bounced through N credentials could hold a client connection open for up to N × 120s, and the default timeout matched Cloudflare's 100s "time to first byte" / 120s hard ceiling exactly, so slow upstreams surfaced as a bare Cloudflare 524 instead of a router-controlled error. Once the shared deadline passes, the router now stops retrying and returns `504 upstream_timeout` with a hint to use `stream: true` for long completions.
+
 ## [0.19.0] — 2026-10-28
 
 ChatGPT subscription: a rate-limit 429 now takes its retry hint only from `error.resets_at` or a header window that is exhausted, not from a plan window that still has headroom; credit-billed seats are read from `spend_control.individual_limit` as a `Spend cap` window (no credit overage when the cap shows no headroom); array tool schemas without `items` get `items: true`; user agent follows omp 18.13.2; `gpt-6.1-terra` is listed (oh-my-pi `58da9df47f`, `d698106d95`, `9810521fa9`, `2ff15b2c21`, `b1ef4170c8`, `e00ec482ef`).
