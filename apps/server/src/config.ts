@@ -18,7 +18,9 @@ const schema = z.object({
   QUOTA_SYNC_INTERVAL_MINUTES: z.coerce.number().min(0).default(30),
   /** What to do when a model has no known price: bill $0 and flag it, or refuse the request. */
   UNPRICED_MODELS: z.enum(["allow", "reject"]).default("allow"),
-  UPSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  /** Hard cap on one client-facing request, including all credential retries. Kept below Cloudflare's
+   * 100s "time to first byte" rule so the router can return a clean 504 instead of a bare 524. */
+  UPSTREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
   /** Directory of the built admin UI (apps/web/dist). Unset = API only. */
   WEB_DIST: z.string().min(1).optional(),
 });

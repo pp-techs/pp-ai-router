@@ -163,6 +163,10 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
     }
 
     const stickyKey = c.req.header("x-session-id") ?? body.prompt_cache_key ?? body.user;
+    // One client-facing request keeps a single upstream deadline across every target/credential
+    // retry, so N retries cannot stack N full timeout windows onto the one connection Cloudflare
+    // is holding open.
+    const deadline = startedAt + deps.config.UPSTREAM_TIMEOUT_MS;
     let lastUpstream: { status: number; message: string } | null = null;
     let earliestRetry: number | null = null;
     let sawUnpriced = false;
@@ -201,11 +205,10 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
         tried.add(credentialId);
 
         const send = async (auth: ResolvedAuth): Promise<Response> => {
+          const remaining = deadline - now();
+          if (remaining <= 0) throw new Error("upstream timeout");
           const timeout = new AbortController();
-          const timer = setTimeout(
-            () => timeout.abort(new Error("upstream timeout")),
-            deps.config.UPSTREAM_TIMEOUT_MS,
-          );
+          const timer = setTimeout(() => timeout.abort(new Error("upstream timeout")), remaining);
           try {
             return await adapter.call({
               baseUrl: provider.baseUrl,
@@ -239,6 +242,15 @@ export function createPipeline(deps: GatewayDeps): Pipeline {
           // A terminal OAuth failure already retired the credential; anything else is worth a cooldown.
           if (!(error instanceof CredentialUnavailableError && error.terminal))
             lease.fail("server_error");
+          // Once the shared deadline is gone, every remaining target/credential would just time out
+          // again immediately; stop retrying and return a clean 504 instead of a confusing 502 chain.
+          if (now() >= deadline) {
+            throw new HttpError(
+              504,
+              "upstream_timeout",
+              `Upstream did not respond within ${deps.config.UPSTREAM_TIMEOUT_MS}ms. For long completions, use stream: true.`,
+            );
+          }
           lastUpstream = { status: 502, message: (error as Error).message };
           deps.log.warn("upstream call failed", {
             provider: target.provider,

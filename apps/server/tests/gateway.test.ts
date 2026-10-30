@@ -354,6 +354,25 @@ describe("failure handling", () => {
     expect(second.status).toBe(503);
     expect(Number(second.headers.get("retry-after"))).toBeGreaterThan(0);
   });
+
+  it("shares one deadline across credential retries and returns a clean 504, not a stacked timeout", async () => {
+    const h = createHarness({ UPSTREAM_TIMEOUT_MS: 50 });
+    // Simulates real elapsed time: by the time the first credential's 50ms wall-clock abort fires,
+    // the fake clock the pipeline reads for its deadline check has already moved past it too.
+    const up = await upstream(() => {
+      h.clock.now += 50;
+      return new Promise<Response>(() => {}); // never resolves
+    });
+    await h.addProvider("acme", up.url, ["k1", "k2"]);
+    const key = await h.newKey();
+
+    const res = await h.chat(key.secret, { model: "acme/m" });
+
+    expect(res.status).toBe(504);
+    expect((await readJson(res)).error.code).toBe("upstream_timeout");
+    // The second credential must not get its own fresh 50ms window stacked on top of the first.
+    expect(up.calls).toHaveLength(1);
+  });
 });
 
 describe("streaming", () => {
