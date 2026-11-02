@@ -29,7 +29,7 @@
       "version": "0.19.2",
       "dependencies": {
         "@base-ui/react": "^1.9.0",
-        "@buiducnhat/better-modal": "^0.0.6",
+        "@buiducnhat/better-modal": "^1.0.0",
         "@fontsource-variable/geist": "^5.3.0",
         "@fontsource-variable/inter": "^5.3.0",
         "@tanstack/react-query": "^5.104.5",
@@ -139,7 +139,7 @@
 
     "@blazediff/core": ["@blazediff/core@1.10.0", "", {}, "sha512-AOQff0zgR7cGsZL+4E7hVkmujoPUpm0J9xzWGWZj5wCjd3gmxESXAPfKyuzs93VdpQNFhHlBhfOjrcZ+XTERtQ=="],
 
-    "@buiducnhat/better-modal": ["@buiducnhat/better-modal@0.0.6", "", { "dependencies": { "zustand": "^5" }, "peerDependencies": { "@types/react": "^19", "react": "^19" } }, "sha512-ssSsxSbG0KdLpcRJizGNcOYilBLIvcr4AMeexulY2XFo48Jk70cqfEaxvTAU5D+AUlX2Pm0K2jDRZBBiLbWwrw=="],
+    "@buiducnhat/better-modal": ["@buiducnhat/better-modal@1.0.0", "", { "dependencies": { "zustand": "^5.0.16" }, "peerDependencies": { "@types/react": "^19.2.14", "react": "^19.2.4" } }, "sha512-RERhWXb5qSrQyU+nIJ/jFdf+rvrw2T/cCAz5LErQtnNBo1Sio9bCiNOKk+y7mVA3u/hnSMLUVKH+5KsH5lktrA=="],
 
     "@changesets/apply-release-plan": ["@changesets/apply-release-plan@8.1.1", "", { "dependencies": { "@changesets/config": "^4.0.1", "@changesets/format": "^0.1.2", "@changesets/git": "^4.0.1", "@changesets/should-skip-package": "^1.0.0", "@changesets/types": "^7.0.0", "import-meta-resolve": "^4.2.0", "jsonc-parser": "^3.3.1", "semver": "^7.8.1" } }, "sha512-nk2Hbq3M9NeHMdaIRBDvawKrQJzXB9sGyBUE5yWnIKtvdcNCPj75zBekJYr0gTT2ecJH3eFeTrc8eisPImcv0Q=="],
 
