@@ -117,7 +117,21 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
     "user-agent": USER_AGENT,
   });
 
-  async function loadCodeAssistProject(accessToken: string): Promise<string | undefined> {
+  /** The account's own default tier among `allowedTiers` (a paid tier for a paying account), when named. */
+  function defaultTierId(data: Json): string | undefined {
+    const tiers = data.allowedTiers;
+    if (!Array.isArray(tiers)) return undefined;
+    for (const entry of tiers) {
+      if (!isRecord(entry) || entry.isDefault !== true) continue;
+      const id = entry.id;
+      if (typeof id === "string" && id.trim().length > 0) return id.trim();
+    }
+    return undefined;
+  }
+
+  async function loadCodeAssistProject(
+    accessToken: string,
+  ): Promise<{ projectId: string | undefined; defaultTierId: string | undefined } | undefined> {
     const res = await doFetch(`${PROD_API}/${API_VERSION}:loadCodeAssist`, {
       method: "POST",
       headers: apiHeaders(accessToken),
@@ -126,16 +140,20 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
     });
     if (!res.ok) return undefined;
     const body: unknown = await res.json().catch(() => undefined);
-    return isRecord(body) ? extractProjectId(body) : undefined;
+    if (!isRecord(body)) return undefined;
+    return { projectId: extractProjectId(body), defaultTierId: defaultTierId(body) };
   }
 
-  async function onboardProject(accessToken: string): Promise<string | undefined> {
+  async function onboardProject(
+    accessToken: string,
+    tierId = "free-tier",
+  ): Promise<string | undefined> {
     for (let attempt = 0; attempt < ONBOARD_ATTEMPTS; attempt++) {
       const res = await doFetch(`${DAILY_API}/${API_VERSION}:onboardUser`, {
         method: "POST",
         headers: apiHeaders(accessToken),
         body: JSON.stringify({
-          tier_id: "free-tier",
+          tier_id: tierId,
           metadata: { ide_type: "ANTIGRAVITY", ide_name: "antigravity", ide_version: IDE_VERSION },
         }),
         signal: timeout(),
@@ -157,9 +175,10 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
     return undefined;
   }
 
-  /** loadCodeAssist, then onboardUser when the account has no project yet. */
+  /** loadCodeAssist, then onboardUser when the account has no project yet; onboarding uses the account's own default tier. */
   async function discoverProject(accessToken: string): Promise<string | undefined> {
-    return (await loadCodeAssistProject(accessToken)) ?? (await onboardProject(accessToken));
+    const account = await loadCodeAssistProject(accessToken);
+    return account?.projectId ?? (await onboardProject(accessToken, account?.defaultTierId));
   }
 
   function tokensFromPayload(

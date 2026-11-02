@@ -43,6 +43,8 @@ function fakeGoogle(clock: { now: number } = { now: 0 }) {
     /** Handler results for token grants, consumed in order; falls back to success. */
     tokenFailures: [] as Response[],
     loadProject: "proj-1" as string | null,
+    /** `loadCodeAssist`'s `allowedTiers`, when a test cares which one the account defaults to. */
+    allowedTiers: undefined as Record<string, unknown>[] | undefined,
     onboard: [] as Record<string, unknown>[],
     generate: [] as Response[],
     email: "Alice@Example.com",
@@ -78,7 +80,10 @@ function fakeGoogle(clock: { now: number } = { now: 0 }) {
     if (url.pathname.endsWith(":loadCodeAssist")) {
       return state.loadProject
         ? Response.json({ cloudaicompanionProject: state.loadProject })
-        : Response.json({ currentTier: {} });
+        : Response.json({
+            currentTier: {},
+            ...(state.allowedTiers ? { allowedTiers: state.allowedTiers } : {}),
+          });
     }
     if (url.pathname.endsWith(":onboardUser")) {
       return Response.json(state.onboard.shift() ?? { done: false });
@@ -295,6 +300,24 @@ describe("OAuth login (paste flow)", () => {
       tier_id: "free-tier",
       metadata: { ide_type: "ANTIGRAVITY" },
     });
+  });
+
+  it("onboards with the account's default allowed tier, not a hardcoded free tier", async () => {
+    const { google, oauth } = setup();
+    google.state.loadProject = null;
+    google.state.allowedTiers = [
+      { id: "legacy-tier", isDefault: false },
+      { id: "standard-tier", isDefault: true },
+    ];
+    google.state.onboard = [
+      { done: true, response: { cloudaicompanionProject: { id: "proj-std" } } },
+    ];
+    const { state } = await oauth.start();
+    const tokens = await oauth.complete!(state, `c#${state.state}`);
+    expect(tokens.extra).toEqual({ project_id: "proj-std" });
+    const onboard = google.calls.filter((c) => c.url.pathname.endsWith(":onboardUser"));
+    expect(onboard).toHaveLength(1);
+    expect(onboard[0]!.body).toMatchObject({ tier_id: "standard-tier" });
   });
 
   it("fails the login instead of storing an account without a project", async () => {
