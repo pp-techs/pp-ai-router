@@ -9,7 +9,7 @@ import {
   readQuotaJson,
   toFiniteNumber,
 } from "../../quota/wire.ts";
-import { API_VERSION, PROJECT_KEY, USER_AGENT } from "./constants.ts";
+import { API_VERSION, CLI_USER_AGENT, PROJECT_KEY, USER_AGENT } from "./constants.ts";
 
 /** Some valid accounts reject the IDE fingerprint on quota accounting only. */
 const FALLBACK_USER_AGENT = "antigravity/1.0";
@@ -187,7 +187,7 @@ export async function fetchAntigravityQuota(
   const project = meta[PROJECT_KEY];
   if (!project) throw new QuotaError("account_unavailable");
   const root = baseUrl.replace(/\/+$/, "");
-  const post = (method: string, userAgent = USER_AGENT) =>
+  const post = (method: string, userAgent: string) =>
     doFetch(`${root}/${API_VERSION}:${method}`, {
       method: "POST",
       headers: {
@@ -204,7 +204,9 @@ export async function fetchAntigravityQuota(
 
   let summaryFailure: QuotaError | null = null;
   try {
-    let res = await post("retrieveUserQuotaSummary");
+    // The summary carries the Gemini 4 Argon group only for the CLI client family: under the IDE
+    // User-Agent the same account reports just the Gemini and Claude groups, so Argon usage is lost.
+    let res = await post("retrieveUserQuotaSummary", CLI_USER_AGENT);
     if (res.status === 403) {
       await discard(res);
       res = await post("retrieveUserQuotaSummary", FALLBACK_USER_AGENT);
@@ -227,7 +229,7 @@ export async function fetchAntigravityQuota(
   }
 
   try {
-    const res = await post("fetchAvailableModels");
+    const res = await post("fetchAvailableModels", USER_AGENT);
     if (!res.ok) {
       await discard(res);
       throw new QuotaError(failureForStatus(res.status), res.status);

@@ -49,8 +49,9 @@ export const USER_AGENT =
 /**
  * Antigravity CLI User-Agent. Cloud Code Assist serves Gemini 4 Argon only to the CLI client family
  * and 404s the other agent models under it, so it is chosen per wire model
- * (`userAgentForWireModel`). `GOOGLE_ANTIGRAVITY_USER_AGENT` never applies to it: letting it replace
- * this header would lock Argon again.
+ * (`userAgentForWireModel`). The quota summary is asked with it too: its Argon group is CLI-only.
+ * `GOOGLE_ANTIGRAVITY_USER_AGENT` never applies to it: letting it replace this header would lock
+ * Argon again.
  */
 export const CLI_USER_AGENT =
   "antigravity/cli/1.3.4 (os_type=darwin; arch=arm64; aidev_client; auth_method=oauth)";

@@ -204,6 +204,10 @@ export class GeminiMapper {
         `Antigravity response truncated upstream before the turn completed (${reason.slice(0, 160)})`,
       );
     }
+    // A backend fault, not a verdict on the request (oh-my-pi): it must not look like a clean stop.
+    if (reason === "MALFORMED_RESPONSE") {
+      throw new Error("Antigravity response failed upstream (MALFORMED_RESPONSE)");
+    }
     if (!this.#sawFrame || !this.#sawTerminal) {
       throw new Error("upstream stream ended without a terminal signal — possible truncation");
     }

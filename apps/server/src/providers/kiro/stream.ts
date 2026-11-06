@@ -34,17 +34,19 @@ interface OpenTool {
   input: string[];
 }
 
+/**
+ * Kiro's safety-filter stops. For Claude models CONTENT_FILTERED is the model's own classifier, a
+ * deterministic verdict on this exact context, so it is a refusal, never a retryable failure.
+ */
+function isContentFilterStop(stopReason: string | undefined): boolean {
+  const normalized = stopReason?.trim().toUpperCase();
+  return normalized === "CONTENT_FILTERED" || normalized === "GUARDRAIL_INTERVENED";
+}
+
 function finishReason(stopReason: string | undefined, sawTool: boolean): FinishReason {
   if (sawTool) return "tool_calls";
-  switch (stopReason?.trim().toUpperCase()) {
-    case "MAX_TOKENS":
-      return "length";
-    case "CONTENT_FILTERED":
-    case "GUARDRAIL_INTERVENED":
-      return "content_filter";
-    default:
-      return "stop";
-  }
+  if (isContentFilterStop(stopReason)) return "content_filter";
+  return stopReason?.trim().toUpperCase() === "MAX_TOKENS" ? "length" : "stop";
 }
 
 function toOpenAiUsage(usage: KiroTokenUsage): OpenAIUsage {
@@ -199,7 +201,11 @@ export async function* kiroChunks(
 
   if (stopReason?.trim().toUpperCase() === "MODEL_CONTEXT_WINDOW_EXCEEDED")
     throw new Error("Kiro stopped because the model context window was exhausted");
-  if (!sawOutput) throw new Error("Kiro returned a successful but empty response stream");
+  // A tool-less turn Kiro refuses arrives with no content at all. It ends as a `content_filter` stop
+  // rather than the empty-stream failure, which would be retried (or failed over) only to be refused
+  // again. A stream with no content and no filter stop is still an empty-stream failure.
+  if (!sawOutput && !isContentFilterStop(stopReason))
+    throw new Error("Kiro returned a successful but empty response stream");
 
   yield chunk(meta, {}, finishReason(stopReason, toolCalls > 0));
   yield usageChunk(

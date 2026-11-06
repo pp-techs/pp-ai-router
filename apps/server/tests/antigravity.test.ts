@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 import { parseCallbackInput } from "../src/oauth/paste.ts";
 import { OAuthRefreshError, type OAuthTokens } from "../src/oauth/types.ts";
 import { ADAPTERS } from "../src/providers/adapter.ts";
-import { createAntigravityAdapter } from "../src/providers/antigravity/adapter.ts";
+import {
+  createAntigravityAdapter,
+  googleRetryAfterSeconds,
+} from "../src/providers/antigravity/adapter.ts";
 import {
   CLI_USER_AGENT,
   CLIENT_ID,
@@ -13,7 +16,11 @@ import {
   userAgentForWireModel,
 } from "../src/providers/antigravity/constants.ts";
 import { ANTIGRAVITY_MODELS, resolveWireModel } from "../src/providers/antigravity/models.ts";
-import { createAntigravityOAuth, type LoginState } from "../src/providers/antigravity/oauth.ts";
+import {
+  createAntigravityOAuth,
+  summarizeDiscovery,
+  type LoginState,
+} from "../src/providers/antigravity/oauth.ts";
 import { resetReplay } from "../src/providers/antigravity/replay.ts";
 import { buildRequest } from "../src/providers/antigravity/request.ts";
 import { chunksFromSse, GeminiMapper } from "../src/providers/antigravity/stream.ts";
@@ -329,6 +336,36 @@ describe("OAuth login (paste flow)", () => {
     );
   });
 
+  it("says why discovery failed, from content-free summaries of each stage", async () => {
+    const { google, oauth } = setup();
+    google.state.loadProject = null; // loadCodeAssist answers without a project, onboarding stays pending
+    const { state } = await oauth.start();
+    const error = (await oauth.complete!(state, `c#${state.state}`).catch(
+      (e: unknown) => e,
+    )) as Error;
+    const [, why] = error.message.split(" Discovery: ");
+    const [load, onboard] = why!.split("; ").map((part) => JSON.parse(part));
+    expect(load).toMatchObject({ stage: "loadCodeAssist", status: 200, outcome: "no-project" });
+    expect(onboard).toMatchObject({ stage: "onboardUser", status: 200, outcome: "pending" });
+
+    // Shapes only: neither upstream text nor project values reach the message.
+    const done = summarizeDiscovery("onboardUser", 200, {
+      done: true,
+      error: { message: "secret detail" },
+      response: { cloudaicompanionProject: "proj-secret" },
+    });
+    expect(JSON.parse(done)).toMatchObject({
+      outcome: "done-with-error",
+      response: { cloudaicompanionProject: "string" },
+    });
+    expect(done).not.toContain("secret");
+    expect(JSON.parse(summarizeDiscovery("loadCodeAssist", 403, undefined))).toMatchObject({
+      outcome: "http-refusal",
+      root: "unparseable",
+    });
+    expect(JSON.parse(summarizeDiscovery("onboardUser", 200, null)).outcome).toBe("invalid-root");
+  });
+
   it("reports a failed code exchange by status only", async () => {
     const { google, oauth } = setup();
     google.state.tokenFailures.push(
@@ -629,6 +666,18 @@ describe("request compilation", () => {
       .sessionId;
     expect(a).toBe(b);
     expect(other).not.toBe(a);
+    // Scoped by account: another project never shares the session (nor its replayed signatures).
+    const otherAccount = JSON.parse(
+      buildRequest({
+        baseUrl: "https://daily-cloudcode-pa.googleapis.com/",
+        token: "tok",
+        project: "proj-2",
+        body: { model: "gemini-3.8-flash", messages: [{ role: "user", content: "same" }] },
+        stream: true,
+      }).body,
+    ).request.sessionId;
+    expect(otherAccount).toMatch(/^-\d+$/);
+    expect(otherAccount).not.toBe(a);
   });
 
   it("maps system text, images, sampling parameters and stop sequences", () => {
@@ -1065,6 +1114,10 @@ describe("response mapping", () => {
       run([part([{ functionCall: { name: "t", args: {} } }], "MAX_TOKENS")]),
     ).rejects.toThrow(/truncated/);
     await expect(run([part([], "MALFORMED_FUNCTION_CALL")])).rejects.toThrow(/truncated/);
+    // A backend fault ends the turn as an error, not a clean stop.
+    await expect(run([part([{ text: "partial" }], "MALFORMED_RESPONSE")])).rejects.toThrow(
+      /MALFORMED_RESPONSE/,
+    );
     await expect(run([part([{ text: "cut off" }])])).rejects.toThrow(/without a terminal signal/);
     await expect(run([])).rejects.toThrow(/without a terminal signal/);
     await expect(run("data: {not json}\n\n")).rejects.toThrow(/malformed upstream SSE/);
@@ -1189,6 +1242,59 @@ describe("thought-signature replay", () => {
     expect(next().contents[1].parts[0].thoughtSignature).toBe("skip_thought_signature_validator");
   });
 
+  it("keeps an account's signatures to that account and never records a bypass token", async () => {
+    const turn = (project: string, signature: string) => {
+      const first = JSON.parse(
+        buildRequest({
+          baseUrl: "https://x.test",
+          token: "t",
+          project,
+          body: { model: "gemini-3.1-pro", messages: [messages[0]] },
+          stream: true,
+        }).body,
+      ).request;
+      const mapper = new GeminiMapper({
+        model: "gemini-3.1-pro",
+        wireModelId: "gemini-pro-agent",
+        sessionId: first.sessionId,
+        restoreToolName: (n) => n,
+      });
+      return collect(
+        chunksFromSse(
+          chunked(
+            `data: ${JSON.stringify(
+              frame({
+                candidates: [
+                  {
+                    content: {
+                      parts: [
+                        {
+                          functionCall: { name: "lookup", args: { a: 1, b: 2 } },
+                          thoughtSignature: signature,
+                        },
+                      ],
+                    },
+                    finishReason: "STOP",
+                  },
+                ],
+              }),
+            )}\n\n`,
+            64,
+          ),
+          mapper,
+        ),
+      );
+    };
+    // Signed on account "p-other": the next request on account "p" has nothing to replay.
+    await turn("p-other", SIG);
+    expect(next().contents[1].parts[0].thoughtSignature).toBe("skip_thought_signature_validator");
+    // Google's context bypass token is not a real signature and is never replayed.
+    await turn("p", "context_engineering_is_the_way_to_go");
+    expect(next().contents[1].parts[0].thoughtSignature).toBe("skip_thought_signature_validator");
+    await turn("p", SIG);
+    expect(next().contents[1].parts[0].thoughtSignature).toBe(SIG);
+  });
+
   it("never fabricates the bypass token for non-Gemini models", () => {
     expect(next("claude-sonnet-4-6").contents[1].parts[0].thoughtSignature).toBeUndefined();
     expect(next("gpt-oss-120b-medium").contents[1].parts[0].thoughtSignature).toBeUndefined();
@@ -1275,6 +1381,52 @@ describe("adapter.call", () => {
       expect(await res.json()).toEqual(quota);
     }
     expect((await call({ token: "revoked" })).status).toBe(401);
+  });
+
+  it("gives a 429 without retry-after the delay Google's error body names", async () => {
+    const { google, call } = setup();
+    google.state.validTokens.add("tok");
+    const body = (detail: Record<string, unknown>) => ({
+      error: {
+        code: 429,
+        status: "RESOURCE_EXHAUSTED",
+        message: "Quota exceeded",
+        details: [detail],
+      },
+    });
+    const retryInfo = body({
+      "@type": "type.googleapis.com/google.rpc.RetryInfo",
+      retryDelay: "42.5s",
+    });
+    google.state.generate.push(Response.json(retryInfo, { status: 429 }));
+    let res = await call();
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("43");
+    expect(await res.json()).toEqual(retryInfo);
+
+    const reset = body({
+      "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+      metadata: { quotaResetDelay: "180s" },
+    });
+    google.state.generate.push(Response.json(reset, { status: 429 }));
+    expect((await call()).headers.get("retry-after")).toBe("180");
+
+    // An explicit header wins; a body without a usable delay leaves the response as it came.
+    google.state.generate.push(
+      Response.json(retryInfo, { status: 429, headers: { "retry-after": "5" } }),
+    );
+    expect((await call()).headers.get("retry-after")).toBe("5");
+    google.state.generate.push(Response.json(body({ retryDelay: "soon" }), { status: 429 }));
+    expect((await call()).headers.get("retry-after")).toBeNull();
+
+    expect(googleRetryAfterSeconds("not json")).toBeUndefined();
+    expect(googleRetryAfterSeconds("{}")).toBeUndefined();
+    expect(googleRetryAfterSeconds(JSON.stringify([retryInfo]))).toBeUndefined();
+    expect(
+      googleRetryAfterSeconds(
+        JSON.stringify({ error: [{ details: [{ retryDelay: "0s" }, { retryDelay: "7s" }] }] }),
+      ),
+    ).toBe("7");
   });
 
   it("answers an unsupported request with a 400 without calling Google", async () => {

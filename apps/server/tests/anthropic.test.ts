@@ -851,6 +851,44 @@ describe("anthropic adapter: response mapping", () => {
     });
   });
 
+  it("keeps a thinking signature delivered on content_block_start, replaced by native signature deltas", async () => {
+    const { h, key } = await claude(() =>
+      anthropicSse([
+        ["message_start", { message: { model: "c", usage: { input_tokens: 3 } } }],
+        // A compatible endpoint that sends the whole signed block on its start.
+        [
+          "content_block_start",
+          { index: 0, content_block: { type: "thinking", thinking: "plan", signature: "START" } },
+        ],
+        ["content_block_stop", { index: 0 }],
+        // A block-start signature followed by native deltas: the deltas win, not START + deltas.
+        [
+          "content_block_start",
+          { index: 1, content_block: { type: "thinking", thinking: "", signature: "START" } },
+        ],
+        ["content_block_delta", { index: 1, delta: { type: "thinking_delta", thinking: "more" } }],
+        ["content_block_delta", { index: 1, delta: { type: "signature_delta", signature: "S1" } }],
+        ["content_block_delta", { index: 1, delta: { type: "signature_delta", signature: "S2" } }],
+        ["content_block_stop", { index: 1 }],
+        ["content_block_start", { index: 2, content_block: { type: "text", text: "" } }],
+        ["content_block_delta", { index: 2, delta: { type: "text_delta", text: "ok" } }],
+        ["content_block_stop", { index: 2 }],
+        ["message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 2 } }],
+        ["message_stop", {}],
+      ]),
+    );
+    const text = await (await chat(h, key, { stream: true })).text();
+    const deltas = text
+      .split("\n\n")
+      .filter((b) => b.startsWith("data: {"))
+      .flatMap((b) => (JSON.parse(b.slice(6)) as Chunk).choices.map((c) => c.delta));
+    expect(deltas.map((d) => d.reasoning_content ?? "").join("")).toBe("planmore");
+    expect(deltas.flatMap((d) => d.thinking_blocks ?? [])).toEqual([
+      { type: "thinking", thinking: "plan", signature: "START" },
+      { type: "thinking", thinking: "more", signature: "S1S2" },
+    ]);
+  });
+
   it("surfaces a mid-stream Anthropic error as an SSE error event", async () => {
     const { h, key } = await claude(() =>
       anthropicSse([
