@@ -5,7 +5,7 @@
 /**
  * Every protocol constant of the ChatGPT sign-in and the Codex backend lives here. The OAuth client id
  * is the public identifier of the Codex CLI (not a user secret). The values are oh-my-pi's effective ones
- * at 9d5d4ac5b5 (the KDL auth rule and `wire/codex.ts` resolved), so a bump there is a bump here.
+ * at 660a31dc33 (the KDL auth rule and `wire/codex.ts` resolved), so a bump there is a bump here.
  */
 export const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
@@ -37,12 +37,13 @@ export const JWT_PROFILE_CLAIM = "https://api.openai.com/profile";
 /**
  * The identity the requests present: omp's. The backend gates model availability on the version (a newer
  * model is simply missing for an older one), so it is pinned to omp's `CODEX_CLIENT_VERSION`.
- * `OMP_VERSION` is the `packages/utils` version omp reports in its `omp/<version>` user agent.
+ * `OMP_VERSION` is the `packages/utils` version omp reports in its `omp/<version>` user agent. No
+ * `OpenAI-Beta` header: codex-rs (and omp since 18.17) sends it only on the WebSocket handshake, which is
+ * not ported, so an HTTP request carries none.
  */
 export const ORIGINATOR = "omp";
 export const CLIENT_VERSION = "0.159.0";
-export const OPENAI_BETA = "responses=experimental";
-export const OMP_VERSION = "18.13.2";
+export const OMP_VERSION = "18.17.0";
 export const USER_AGENT = `omp/${OMP_VERSION}`;
 
 /** `POST {base}/responses` for a base ending in `/codex`, `{base}/codex/responses` otherwise (omp `resolveCodexResponsesUrl`). */

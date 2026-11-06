@@ -304,8 +304,9 @@ describe("Antigravity quota", () => {
   it("retries a 403 with the plain user agent, but ends on 401 without the fallback", async () => {
     const retried = scriptedFetch(httpStatus(403), json(summary));
     await fetchAntigravityQuota(call(account), retried.fetch);
+    // The summary is asked with the CLI User-Agent: only that family gets the Argon group.
     expect(retried.seen.map((s) => s.headers.get("user-agent"))).toEqual([
-      expect.stringContaining("antigravity/ide"),
+      expect.stringContaining("antigravity/cli/"),
       "antigravity/1.0",
     ]);
 
@@ -327,6 +328,11 @@ describe("Antigravity quota", () => {
     expect(f.seen.map((s) => s.url.pathname)).toEqual([
       "/v1internal:retrieveUserQuotaSummary",
       "/v1internal:fetchAvailableModels",
+    ]);
+    // The models listing keeps the IDE User-Agent.
+    expect(f.seen.map((s) => s.headers.get("user-agent"))).toEqual([
+      expect.stringContaining("antigravity/cli/"),
+      expect.stringContaining("antigravity/ide/"),
     ]);
   });
 

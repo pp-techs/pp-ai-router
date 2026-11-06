@@ -343,14 +343,18 @@ function toolSelection(
 /**
  * Deterministic Cloud Code Assist session id from the first user message (sha256 -> uint64 & 0x7FFF..,
  * prefixed with "-"), mirroring CLIProxyAPI. Must be identical on turn N and N+1 so the thought-signature
- * replay keeps matching; random when there is no text to anchor on.
+ * replay keeps matching; random when there is no text to anchor on. Scoped by the account (its
+ * project): two accounts never share a session id, so one account's signatures are never replayed to
+ * another.
  */
-function sessionIdFor(messages: unknown[]): string {
+function sessionIdFor(messages: unknown[], accountScope: string): string {
   for (const message of messages) {
     if (!isRecord(message) || message.role !== "user") continue;
     const text = contentText(message.content);
     if (!text) continue;
-    const digest = createHash("sha256").update(text, "utf8").digest();
+    const scope = accountScope.trim();
+    const preimage = scope ? `acct:${scope}\0${text}` : text;
+    const digest = createHash("sha256").update(preimage, "utf8").digest();
     return `-${(digest.readBigUInt64BE(0) & 0x7fffffffffffffffn).toString()}`;
   }
   return `-${Math.floor(Math.random() * 9e18)}`;
@@ -478,7 +482,7 @@ export function buildRequest(input: {
   if (Object.keys(generationConfig).length > 0) draft.generationConfig = generationConfig;
 
   // The real client puts the session id ONLY at `request.sessionId`.
-  const sessionId = sessionIdFor(messages);
+  const sessionId = sessionIdFor(messages, input.project);
   draft.sessionId = sessionId;
 
   const compiled = compileGoogleWireBody(draft);

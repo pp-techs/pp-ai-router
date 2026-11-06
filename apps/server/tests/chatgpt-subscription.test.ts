@@ -868,7 +868,6 @@ describe("adapter", () => {
     expect(sent.headers).toMatchObject({
       authorization: `Bearer ${accessToken()}`,
       "chatgpt-account-id": ACCOUNT,
-      "openai-beta": "responses=experimental",
       originator: "omp",
       version: "0.159.0",
       "user-agent": USER_AGENT,
@@ -880,7 +879,9 @@ describe("adapter", () => {
       "x-client-request-id": "conv-1",
       "x-codex-routing-hint": "model=gpt-5.6-sol",
     });
-    expect(USER_AGENT).toMatch(/^omp\/\d+\.\d+\.\d+$/);
+    expect(USER_AGENT).toBe("omp/18.17.0");
+    // codex-rs (and omp since 18.17) sends `OpenAI-Beta` only on the WebSocket handshake: HTTP carries none.
+    expect(sent.headers["openai-beta"]).toBeUndefined();
     expect(sent.headers["thread-id"]).toMatch(UUID);
     expect(sent.headers["x-codex-window-id"]).toMatch(UUID);
     expect(sent.headers["x-codex-installation-id"]).toBeUndefined();
@@ -950,7 +951,7 @@ describe("adapter", () => {
       token,
       meta: { account_id: "stored" },
       baseUrl: "http://127.0.0.1:9/backend-api/codex/",
-      headers: { originator: "custom", "x-extra": "1" },
+      headers: { originator: "custom", "OpenAI-Beta": "responses=experimental", "x-extra": "1" },
     });
     const sent = up.calls[0]!;
     expect(sent.url).toBe("http://127.0.0.1:9/backend-api/codex/responses");
@@ -960,6 +961,7 @@ describe("adapter", () => {
       originator: "omp",
       "x-extra": "1",
     });
+    expect(sent.headers["openai-beta"]).toBeUndefined();
     await callOf(adapter, { token, headers: { "x-openai-internal-codex-residency": "us" } });
     expect(up.calls[1]!.headers["x-openai-internal-codex-residency"]).toBe("us");
   });

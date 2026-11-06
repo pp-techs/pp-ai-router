@@ -69,6 +69,78 @@ function extractProjectId(data: Json): string | undefined {
   return undefined;
 }
 
+type DiscoveryStage = "loadCodeAssist" | "onboardUser";
+
+/** The type of a project field, never its value. */
+function projectValueType(value: unknown): string {
+  if (value === undefined) return "absent";
+  if (typeof value === "string") return "string";
+  if (isRecord(value)) return typeof value.id === "string" ? "object-with-id" : "object-without-id";
+  return "other";
+}
+
+function projectTypes(data: unknown): Record<string, string> {
+  const object = isRecord(data) ? data : undefined;
+  return {
+    cloudaicompanionProject: projectValueType(object?.cloudaicompanionProject),
+    projectId: projectValueType(object?.projectId),
+    project: projectValueType(object?.project),
+  };
+}
+
+/**
+ * Content-free account of one project-discovery answer, for the message of a failed login: the
+ * status, the shape of the body and of its project fields, never upstream text or values.
+ * `data` is undefined when the body was not parsed (HTTP refusal) or was not JSON.
+ */
+export function summarizeDiscovery(stage: DiscoveryStage, status: number, data: unknown): string {
+  const root =
+    data === undefined
+      ? "unparseable"
+      : Array.isArray(data)
+        ? "array"
+        : isRecord(data)
+          ? "object"
+          : "other";
+  const object = isRecord(data) ? data : undefined;
+  const done =
+    object?.done === undefined
+      ? "absent"
+      : object.done === true
+        ? "true"
+        : object.done === false
+          ? "false"
+          : "other";
+  const error = object && Object.hasOwn(object, "error") ? "present" : "absent";
+  const outcome =
+    status < 200 || status >= 300
+      ? "http-refusal"
+      : root === "unparseable"
+        ? "unparseable"
+        : root !== "object"
+          ? "invalid-root"
+          : stage === "loadCodeAssist"
+            ? "no-project"
+            : done !== "true"
+              ? "pending"
+              : error === "present"
+                ? "done-with-error"
+                : "done-without-project";
+  return JSON.stringify({
+    stage,
+    status,
+    root,
+    outcome,
+    done,
+    error,
+    projects: projectTypes(object),
+    response: projectTypes(object?.response),
+  });
+}
+
+/** The last discovery answer of each stage, kept for the message of a failed login. */
+type DiscoveryNotes = Partial<Record<DiscoveryStage, string>>;
+
 /** Token endpoint failure; `code` is Google's `error` field (`invalid_grant`, ...). Bodies are never kept: they carry grant details. */
 class TokenEndpointError extends Error {
   readonly status: number;
@@ -131,6 +203,7 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
 
   async function loadCodeAssistProject(
     accessToken: string,
+    notes: DiscoveryNotes,
   ): Promise<{ projectId: string | undefined; defaultTierId: string | undefined } | undefined> {
     const res = await doFetch(`${PROD_API}/${API_VERSION}:loadCodeAssist`, {
       method: "POST",
@@ -138,14 +211,20 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
       body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
       signal: timeout(),
     });
-    if (!res.ok) return undefined;
+    if (!res.ok) {
+      notes.loadCodeAssist = summarizeDiscovery("loadCodeAssist", res.status, undefined);
+      await res.body?.cancel().catch(() => {});
+      return undefined;
+    }
     const body: unknown = await res.json().catch(() => undefined);
+    notes.loadCodeAssist = summarizeDiscovery("loadCodeAssist", res.status, body);
     if (!isRecord(body)) return undefined;
     return { projectId: extractProjectId(body), defaultTierId: defaultTierId(body) };
   }
 
   async function onboardProject(
     accessToken: string,
+    notes: DiscoveryNotes,
     tierId = "free-tier",
   ): Promise<string | undefined> {
     for (let attempt = 0; attempt < ONBOARD_ATTEMPTS; attempt++) {
@@ -159,6 +238,8 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
         signal: timeout(),
       });
       if (!res.ok) {
+        notes.onboardUser = summarizeDiscovery("onboardUser", res.status, undefined);
+        await res.body?.cancel().catch(() => {});
         // Transient (429/5xx): keep polling within the attempt budget. Hard 4xx: give up now.
         if (res.status === 429 || res.status >= 500) {
           await sleep(ONBOARD_POLL_MS);
@@ -167,6 +248,7 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
         return undefined;
       }
       const data: unknown = await res.json().catch(() => undefined);
+      notes.onboardUser = summarizeDiscovery("onboardUser", res.status, data);
       if (isRecord(data) && data.done === true) {
         return isRecord(data.response) ? extractProjectId(data.response) : undefined;
       }
@@ -176,9 +258,12 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
   }
 
   /** loadCodeAssist, then onboardUser when the account has no project yet; onboarding uses the account's own default tier. */
-  async function discoverProject(accessToken: string): Promise<string | undefined> {
-    const account = await loadCodeAssistProject(accessToken);
-    return account?.projectId ?? (await onboardProject(accessToken, account?.defaultTierId));
+  async function discoverProject(
+    accessToken: string,
+    notes: DiscoveryNotes = {},
+  ): Promise<string | undefined> {
+    const account = await loadCodeAssistProject(accessToken, notes);
+    return account?.projectId ?? (await onboardProject(accessToken, notes, account?.defaultTierId));
   }
 
   function tokensFromPayload(
@@ -249,11 +334,14 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
         code_verifier: session.verifier,
       });
       const tokens = tokensFromPayload(payload, null);
-      const project = await discoverProject(tokens.accessToken);
+      const notes: DiscoveryNotes = {};
+      const project = await discoverProject(tokens.accessToken, notes);
       // Without a project every request would be rejected; fail the login instead of storing a dud account.
       if (!project) {
+        // The message says why, from content-free summaries of what each discovery stage answered.
+        const why = [notes.loadCodeAssist, notes.onboardUser].filter(Boolean).join("; ");
         throw new Error(
-          "Could not discover a Cloud Code Assist project for this account. Make sure it has Antigravity / Cloud Code Assist access and try again.",
+          `Could not discover a Cloud Code Assist project for this account. Make sure it has Antigravity / Cloud Code Assist access and try again.${why ? ` Discovery: ${why}` : ""}`,
         );
       }
       return { ...tokens, extra: { [PROJECT_KEY]: project } };

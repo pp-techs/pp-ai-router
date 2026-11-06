@@ -6,7 +6,8 @@ import { isRecord } from "./json.ts";
  * Thought-signature replay. Gemini 3 returns an opaque `thoughtSignature` on function-call parts and
  * rejects the next turn when the call comes back without it. An OpenAI client cannot carry the
  * signature, so the adapter remembers it (per model + session, keyed by the call's name and
- * arguments) and re-injects it when the same call appears in the history of a later request.
+ * arguments; the session id is scoped by account, see `request.ts`) and re-injects it when the
+ * same call appears in the history of a later request.
  * In memory only, TTL + size bounded. The reference's disk snapshot and byte budgets are not ported.
  */
 
@@ -18,6 +19,8 @@ const REPLAY_TTL_MS = 60 * 60_000;
 
 /** Official validator-bypass token, used only where no real signature exists. */
 export const THOUGHT_SIGNATURE_BYPASS = "skip_thought_signature_validator";
+/** Google's other bypass token. Never sent by this adapter, and never recorded as a real signature either. */
+export const THOUGHT_SIGNATURE_CONTEXT_BYPASS = "context_engineering_is_the_way_to_go";
 
 interface Session {
   /** callKey -> signatures, oldest first (a repeated identical call gets a new one each time). */
@@ -58,7 +61,8 @@ export function extractSignature(part: Record<string, unknown>): string | undefi
     if (
       typeof candidate === "string" &&
       candidate.length >= MIN_SIGNATURE_LEN &&
-      candidate !== THOUGHT_SIGNATURE_BYPASS
+      candidate !== THOUGHT_SIGNATURE_BYPASS &&
+      candidate !== THOUGHT_SIGNATURE_CONTEXT_BYPASS
     ) {
       return candidate;
     }

@@ -793,6 +793,42 @@ describe("stream mapping", () => {
     );
   });
 
+  it("ends a refused turn with no content as content_filter, not an empty stream", async () => {
+    const refusal = (stopReason: string, before: Buffer[] = []) =>
+      collect(
+        kiroChunks(
+          bodyOf([
+            ...before,
+            metadata({
+              stopReason,
+              stopDetails: { refusal: { category: "BIO", explanation: "Refused." } },
+              tokenUsage: { uncachedInputTokens: 10, outputTokens: 0 },
+            }),
+          ]),
+          ctx,
+        ),
+      );
+    for (const stopReason of ["CONTENT_FILTERED", "guardrail_intervened"]) {
+      const out = await refusal(stopReason);
+      expect(out.at(-2)!.choices[0]!.finish_reason).toBe("content_filter");
+      expect(out.at(-1)!.usage).toMatchObject({ prompt_tokens: 10, completion_tokens: 0 });
+      const done = await aggregateChunks(collectAsync(out));
+      expect(done.choices[0]!.message.content).toBeNull();
+      expect(done.choices[0]!.finish_reason).toBe("content_filter");
+    }
+    // Reasoning before the filter is not an answer either; the turn still ends as a refusal.
+    const reasoned = await refusal("CONTENT_FILTERED", [
+      event("reasoningContentEvent", { text: "hmm" }),
+    ]);
+    expect(reasoned.at(-2)!.choices[0]!.finish_reason).toBe("content_filter");
+    // A real tool call keeps its precedence over the filter stop.
+    const tooled = await refusal("CONTENT_FILTERED", [
+      event("toolUseEvent", { name: "t", toolUseId: "1", input: "{}" }),
+      event("toolUseEvent", { name: "t", toolUseId: "1", stop: true }),
+    ]);
+    expect(tooled.at(-2)!.choices[0]!.finish_reason).toBe("tool_calls");
+  });
+
   it("turns error frames and protocol violations into failures", async () => {
     const run = (frames: Buffer[]) => collect(kiroChunks(bodyOf(frames), ctx));
 
@@ -953,6 +989,20 @@ describe("kiro adapter", () => {
       " there",
     ]);
     expect(parsed.at(-1).usage.total_tokens).toBe(47);
+  });
+
+  it("serves a tool-less content-filter refusal as a completed response, not a failed attempt", async () => {
+    const up = fakeFetch(() =>
+      eventStream([metadata({ ...usageBody, stopReason: "CONTENT_FILTERED" })]),
+    );
+    const res = await callOf(createKiroAdapter({ fetch: up.fetch }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ChatCompletion;
+    expect(body.choices[0]).toMatchObject({
+      finish_reason: "content_filter",
+      message: { content: null },
+    });
+    expect(up.calls).toHaveLength(1);
   });
 
   it("uses the CLI shape and Builder ID service profile for SSO OIDC accounts", async () => {

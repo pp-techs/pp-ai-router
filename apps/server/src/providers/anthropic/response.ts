@@ -115,7 +115,16 @@ export async function* streamChunks(
   /** Anthropic block index -> accumulating state of the block that is open. */
   const blocks = new Map<
     number,
-    { type: string; thinking: string; signature: string; data: string; tool: number; args: boolean }
+    {
+      type: string;
+      thinking: string;
+      signature: string;
+      /** Whether a native `signature_delta` arrived (a block-start signature is only a fallback). */
+      signatureDelta: boolean;
+      data: string;
+      tool: number;
+      args: boolean;
+    }
   >();
 
   for await (const event of parseSse(body)) {
@@ -141,13 +150,20 @@ export async function* streamChunks(
         const state = {
           type: String(block.type),
           thinking: "",
-          signature: "",
+          // Some compatible endpoints put the signature on the block start: a fallback that the
+          // first native `signature_delta` replaces, not a prefix of the delta sequence (like omp).
+          signature: typeof block.signature === "string" ? block.signature : "",
+          signatureDelta: false,
           data: typeof block.data === "string" ? block.data : "",
           tool: -1,
           args: false,
         };
         blocks.set(index, state);
-        if (block.type === "tool_use") {
+        if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking) {
+          // Thinking text delivered whole on the block start belongs to the signed block too.
+          state.thinking = block.thinking;
+          yield chunk(meta, { reasoning_content: block.thinking });
+        } else if (block.type === "tool_use") {
           state.tool = toolCount++;
           yield chunk(meta, {
             tool_calls: [
@@ -177,7 +193,10 @@ export async function* streamChunks(
           // Some Anthropic-compatible reasoning models name the thinking block `reasoning`.
           if (delta.reasoning) yield chunk(meta, { reasoning_content: delta.reasoning });
         } else if (delta.type === "signature_delta" && typeof delta.signature === "string") {
-          state.signature += delta.signature;
+          state.signature = state.signatureDelta
+            ? state.signature + delta.signature
+            : delta.signature;
+          state.signatureDelta = true;
         } else if (delta.type === "input_json_delta" && typeof delta.partial_json === "string") {
           if (delta.partial_json) {
             state.args = true;

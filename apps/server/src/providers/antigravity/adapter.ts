@@ -2,6 +2,7 @@
 import type { ProviderAdapter } from "../adapter.ts";
 import { respond } from "../chunks.ts";
 import { DEFAULT_BASE_URL, PROJECT_KEY } from "./constants.ts";
+import { isRecord } from "./json.ts";
 import { ANTIGRAVITY_MODELS } from "./models.ts";
 import { fetchAntigravityQuota } from "./quota.ts";
 import { createAntigravityOAuth, type OAuthDeps } from "./oauth.ts";
@@ -10,11 +11,63 @@ import { chunksFromJson, chunksFromSse, GeminiMapper } from "./stream.ts";
 import { repairInvalidRequestBody } from "./wire-compiler.ts";
 
 /**
+ * The retry delay (whole seconds) a Google error body names: `RetryInfo.retryDelay` or
+ * `ErrorInfo.metadata.quotaResetDelay` (`"42.5s"` -> `"43"`). Undefined when it names none.
+ */
+export function googleRetryAfterSeconds(payloadText: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payloadText);
+  } catch {
+    return undefined;
+  }
+  const error = isRecord(parsed) ? parsed.error : undefined;
+  const root = Array.isArray(error) ? error[0] : (error ?? parsed);
+  if (!isRecord(root) || !Array.isArray(root.details)) return undefined;
+  for (const detail of root.details as unknown[]) {
+    if (!isRecord(detail)) continue;
+    const raw =
+      typeof detail.retryDelay === "string"
+        ? detail.retryDelay
+        : isRecord(detail.metadata) && typeof detail.metadata.quotaResetDelay === "string"
+          ? detail.metadata.quotaResetDelay
+          : undefined;
+    const match = raw === undefined ? null : /^\s*(\d+(?:\.\d+)?)\s*s\s*$/i.exec(raw);
+    if (!match) continue;
+    const seconds = Math.ceil(Number(match[1]));
+    if (Number.isFinite(seconds) && seconds > 0) return String(seconds);
+  }
+  return undefined;
+}
+
+/**
+ * A 429 without `retry-after` gets one from the delay its body names, so the gateway's cooldown
+ * follows Google's hint instead of its own backoff. Otherwise the response is returned as it came.
+ */
+async function withRetryHint(res: Response): Promise<Response> {
+  if (res.status !== 429 || res.headers.has("retry-after")) return res;
+  const text = await res
+    .clone()
+    .text()
+    .catch(() => "");
+  const seconds = googleRetryAfterSeconds(text);
+  if (!seconds) return res;
+  await res.body?.cancel().catch(() => {});
+  const headers = new Headers(res.headers);
+  // The body is re-emitted decoded.
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+  headers.set("retry-after", seconds);
+  return new Response(text, { status: res.status, statusText: res.statusText, headers });
+}
+
+/**
  * Google Antigravity (Cloud Code Assist): the OpenAI request is compiled into the `v1internal`
  * envelope, the Gemini SSE/JSON answer is mapped back to OpenAI chunks. Upstream non-2xx responses
- * are returned untouched (status, body and `retry-after`) so the gateway classifies 401/403/429/5xx;
- * the one exception is a 400 that blames the tool schemas or the thinking config, which is replayed
- * once with those parts relaxed.
+ * are returned with their status, body and `retry-after` so the gateway classifies 401/403/429/5xx
+ * (a 429 without `retry-after` gets one from Google's `RetryInfo` / `quotaResetDelay`); the one
+ * exception is a 400 that blames the tool schemas or the thinking config, which is replayed once
+ * with those parts relaxed.
  */
 export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter {
   const doFetch = deps.fetch ?? fetch;
@@ -62,7 +115,7 @@ export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter 
           res = await send(repaired);
         }
       }
-      if (!res.ok) return res;
+      if (!res.ok) return withRetryHint(res);
       if (!res.body) throw new Error("Antigravity returned an empty response body");
 
       const mapper = new GeminiMapper({

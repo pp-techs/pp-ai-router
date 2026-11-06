@@ -2,13 +2,7 @@
 // createCodexRequestMetadata, applyCodexCompatibilityHeaders), packages/catalog wire/codex.ts
 // (OPENAI_HEADERS, codexRoutingHint, applyCodexResidencyHeader).
 import { randomUUID } from "node:crypto";
-import {
-  ACCOUNT_ID_KEY,
-  CLIENT_VERSION,
-  OPENAI_BETA,
-  ORIGINATOR,
-  USER_AGENT,
-} from "./constants.ts";
+import { ACCOUNT_ID_KEY, CLIENT_VERSION, ORIGINATOR, USER_AGENT } from "./constants.ts";
 import { readIdentity, readResidency } from "./jwt.ts";
 
 /** The workspace the token draws limits from, as the quota probe knows it: the stored one, else the token's claim. */
@@ -118,7 +112,8 @@ export function requestHeaders(
   const residency = readResidency(token);
   if (residency && !headers.has(HEADER.RESIDENCY)) headers.set(HEADER.RESIDENCY, residency);
   headers.delete("x-oai-attestation");
-  headers.set("openai-beta", OPENAI_BETA);
+  // codex-rs sends `OpenAI-Beta` only on the WebSocket handshake; an HTTP turn carries none (omp 18.17).
+  headers.delete("openai-beta");
   headers.set("originator", ORIGINATOR);
   headers.set("version", CLIENT_VERSION);
   headers.set("user-agent", USER_AGENT);
