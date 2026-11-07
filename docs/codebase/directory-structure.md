@@ -20,7 +20,7 @@ pp-ai-router/
 ├── vite.config.ts         Vite+ config: staged hook, lint (type-aware), task cache
 ├── .vite-hooks/pre-commit runs `vp staged`
 ├── .node-version          24.21.0 (also what the Docker build ships)
-└── docs/                  this documentation
+└── docs/                  this documentation (docs/brand: logo files and usage guide)
 ```
 
 ## Entry points
