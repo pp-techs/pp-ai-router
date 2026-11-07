@@ -1,5 +1,11 @@
 # web
 
+## 0.20.1
+
+### Patch Changes
+
+- c3e9716: New logo (fan-out mark: input ring, three provider dots): favicon, apple-touch icon, sidebar and login brand mark. Logo files and usage guide live in `docs/brand`.
+
 ## 0.20.0
 
 No changes in this release.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.20.1] — 2026-11-07
+
+New logo (fan-out mark: input ring, three provider dots): favicon, apple-touch icon, sidebar and login brand mark. Logo files and usage guide live in `docs/brand`.
+
 ## [0.20.0] — 2026-11-06
 
 Sync subscription/OAuth providers with opencodex v2.97.0 (`cab7eb7d0`) and oh-my-pi 18.17.0 (`660a31dc33`).
