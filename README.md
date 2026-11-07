@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lockups/pp-ai-router-horizontal-on-dark.svg" />
+    <img alt="pp-ai-router" src="docs/brand/lockups/pp-ai-router-horizontal.svg" height="64" />
+  </picture>
+</p>
+
 # pp-ai-router
 
 LLM/AI router: one OpenAI- and Anthropic-compatible endpoint in front of many upstream providers
