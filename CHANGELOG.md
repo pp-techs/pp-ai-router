@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.21.0] — 2026-11-09
+
+Sync the OAuth flows with opencodex v2.99.0 (`667662903`) and oh-my-pi `21f1188cf8` (18.18.3).
+
+Antigravity: a token is now treated as expired five minutes before Google says, at login and on refresh, as both references do (opencodex `REFRESH_SKEW_MS`, oh-my-pi `skew-ms=300000`). The account refreshes before the bearer's last five minutes instead of its last one.
+
+Claude subscription, ChatGPT subscription and Kiro needed no change: client ids, scopes, endpoints, redirects, PKCE/state, token bodies, expiry skew, identity claims and refresh-failure classification still match their oh-my-pi rules (Claude, ChatGPT) or opencodex (Kiro). opencodex's OAuth commits since `cab7eb7d0` are credential-store locking, pool routing and public error mapping, which this gateway does not port; oh-my-pi changed no OAuth flow file. The adapter wire behaviour was not re-synced, so the recorded sync base is unchanged.
+
+Usage dashboard: one filter bar now narrows the activity chart, summary and ledger together — API key, provider, status, streamed/buffered, unpriced, a model-name search and the time range. The chart gains a Failures metric, and the ledger follows the selected range instead of always showing all time.
+
+The admin usage endpoints share those filters: `q` (requested or upstream model substring), `status` (one value or a comma list), `stream`, `unpriced` and `since` on `/admin/usage`, `/admin/usage/summary` and `/admin/usage/timeline`, and timeline buckets now include `failed_requests`.
+
 ## [0.20.1] — 2026-11-07
 
 New logo (fan-out mark: input ring, three provider dots): favicon, apple-touch icon, sidebar and login brand mark. Logo files and usage guide live in `docs/brand`.
