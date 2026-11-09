@@ -32,6 +32,7 @@ import type {
   UsageEvent,
   UsageFilter,
   UsageGroup,
+  UsageQuery,
   UsageSummary,
   UsageTimeline,
   VirtualKey,
@@ -133,14 +134,14 @@ export const api = {
 
   usage: (filter: UsageFilter) =>
     unwrap(request<List<UsageEvent>>("GET", "/admin/usage", { query: { ...filter } })),
-  usageSummary: (groupBy: UsageGroup, since: number) =>
+  usageSummary: (groupBy: UsageGroup, since: number, filter: UsageQuery = {}) =>
     request<UsageSummary>("GET", "/admin/usage/summary", {
-      query: { group_by: groupBy, since },
+      query: { ...filter, group_by: groupBy, since },
     }),
 
-  usageTimeline: (since: number, bucketMs: number) =>
+  usageTimeline: (since: number, bucketMs: number, filter: UsageQuery = {}) =>
     request<UsageTimeline>("GET", "/admin/usage/timeline", {
-      query: { since, bucket_ms: bucketMs },
+      query: { ...filter, since, bucket_ms: bucketMs },
     }),
 
   auditLogs: (filter?: AuditLogFilter) =>

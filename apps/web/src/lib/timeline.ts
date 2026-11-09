@@ -20,6 +20,7 @@ export const RANGE_KEYS = Object.keys(RANGES) as RangeKey[];
 export const emptyBucket = (ts: number): UsageBucket => ({
   ts,
   requests: 0,
+  failed_requests: 0,
   input_tokens: 0,
   output_tokens: 0,
   cost_usd: 0,

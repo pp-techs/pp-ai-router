@@ -84,6 +84,121 @@ describe("request lifecycle", () => {
     expect((await h.admin("GET", "/usage/timeline")).status).toBe(400);
   });
 
+  it("filters the ledger, summary and timeline by status, traffic, price, model and time", async () => {
+    const h = createHarness();
+    const key = await h.newKey();
+    const t0 = h.clock.now;
+    const insert = (
+      id: number,
+      row: {
+        ts: number;
+        provider: string;
+        model: string;
+        upstream: string;
+        cost: number;
+        price: string;
+        stream: 0 | 1;
+        status: "ok" | "aborted" | "error" | "no_usage";
+      },
+    ) =>
+      h.services.db
+        .prepare(
+          `INSERT INTO usage_events (id, ts, key_id, provider_id, credential_id, model, upstream_model,
+             input_tokens, output_tokens, cached_tokens, cache_write_tokens, reasoning_tokens,
+             cost_usd, price_source, stream, status, latency_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 10, 5, 0, 0, 0, ?, ?, ?, ?, 10)`,
+        )
+        .run(
+          id,
+          row.ts,
+          key.id,
+          row.provider,
+          "cred-1",
+          row.model,
+          row.upstream,
+          row.cost,
+          row.price,
+          row.stream,
+          row.status,
+        );
+
+    insert(1, {
+      ts: t0,
+      provider: "acme",
+      model: "acme/alpha",
+      upstream: "alpha",
+      cost: 0.01,
+      price: "override",
+      stream: 0,
+      status: "ok",
+    });
+    insert(2, {
+      ts: t0 + 1000,
+      provider: "cheap",
+      model: "cheap/beta",
+      upstream: "beta",
+      cost: 0,
+      price: "unknown",
+      stream: 1,
+      status: "error",
+    });
+    insert(3, {
+      ts: t0 + 2000,
+      provider: "acme",
+      model: "other/delta",
+      upstream: "gamma",
+      cost: 0.02,
+      price: "override",
+      stream: 1,
+      status: "aborted",
+    });
+
+    const ids = async (qs: string) =>
+      (await h.admin("GET", `/usage?${qs}`)).json.data.map((e: { id: number }) => e.id);
+
+    expect(await ids("status=error")).toEqual([2]);
+    expect(await ids("status=error,aborted")).toEqual([3, 2]);
+    expect(await ids("stream=1")).toEqual([3, 2]);
+    expect(await ids("unpriced=1")).toEqual([2]);
+    expect(await ids("q=alp")).toEqual([1]);
+    expect(await ids("q=gamma")).toEqual([3]);
+    expect(await ids(`since=${t0 + 1500}`)).toEqual([3]);
+    expect(await ids("provider_id=acme&status=aborted")).toEqual([3]);
+
+    expect((await h.admin("GET", "/usage?status=nope")).status).toBe(400);
+    expect((await h.admin("GET", "/usage?stream=2")).status).toBe(400);
+    expect((await h.admin("GET", "/usage?since=-1")).status).toBe(400);
+
+    const summary = (
+      await h.admin("GET", `/usage/summary?group_by=provider&since=${t0}&status=error`)
+    ).json;
+    expect(summary.data).toEqual([
+      {
+        group: "cheap",
+        requests: 1,
+        input_tokens: 10,
+        output_tokens: 5,
+        cost_usd: 0,
+        unpriced_requests: 1,
+      },
+    ]);
+
+    const bucket = Math.floor((t0 + 1000) / 60_000) * 60_000;
+    const timeline = (
+      await h.admin("GET", `/usage/timeline?since=${t0}&bucket_ms=60000&status=error&q=beta`)
+    ).json;
+    expect(timeline.data).toEqual([
+      {
+        ts: bucket,
+        requests: 1,
+        input_tokens: 10,
+        output_tokens: 5,
+        cost_usd: 0,
+        failed_requests: 1,
+      },
+    ]);
+  });
+
   it("addresses a provider directly with provider/model", async () => {
     const up = await upstream(() => completion());
     const h = createHarness();

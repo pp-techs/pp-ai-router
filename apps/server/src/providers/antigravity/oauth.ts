@@ -9,6 +9,7 @@ import {
   CLIENT_ID,
   CLIENT_SECRET,
   DAILY_API,
+  EXPIRY_SKEW_MS,
   IDE_VERSION,
   LOGIN_TTL_MS,
   ONBOARD_ATTEMPTS,
@@ -282,7 +283,7 @@ export function createAntigravityOAuth(deps: OAuthDeps = {}): OAuthProvider<Logi
     return {
       accessToken,
       refreshToken,
-      expiresAt: now() + expiresIn * 1000,
+      expiresAt: now() + expiresIn * 1000 - EXPIRY_SKEW_MS,
       account: emailFromToken(accessToken, nonEmpty(payload.id_token)),
     };
   }

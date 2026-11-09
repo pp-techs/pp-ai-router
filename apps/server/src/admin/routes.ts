@@ -199,6 +199,76 @@ function parseLimit(input: z.infer<typeof limitInput>) {
   }
 }
 
+const USAGE_STATUSES = ["ok", "aborted", "error", "no_usage"] as const;
+
+interface UsageWhere {
+  where: string[];
+  params: (string | number)[];
+}
+
+/**
+ * The shared WHERE of the usage endpoints. Every value is parameterised; `since` is passed separately
+ * because the events endpoint treats it as optional while summary/timeline resolve a default window.
+ */
+function usageWhere(q: Record<string, string | undefined>, since?: number): UsageWhere {
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+  for (const column of ["key_id", "provider_id", "credential_id", "model"] as const) {
+    const value = q[column];
+    if (value) {
+      where.push(`${column} = ?`);
+      params.push(value);
+    }
+  }
+  const search = q.q?.trim();
+  if (search) {
+    where.push("(instr(lower(model), lower(?)) > 0 OR instr(lower(upstream_model), lower(?)) > 0)");
+    params.push(search, search);
+  }
+  const status = q.status?.trim();
+  if (status) {
+    const list = status
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const invalid = list.filter((value) => !(USAGE_STATUSES as readonly string[]).includes(value));
+    if (list.length === 0 || invalid.length > 0) {
+      throw new HttpError(
+        400,
+        "invalid_request",
+        `status must be a comma list of ${USAGE_STATUSES.join(", ")}`,
+      );
+    }
+    where.push(`status IN (${list.map(() => "?").join(", ")})`);
+    params.push(...list);
+  }
+  if (q.stream !== undefined && q.stream !== "") {
+    if (q.stream !== "0" && q.stream !== "1") {
+      throw new HttpError(400, "invalid_request", "stream must be 0 or 1");
+    }
+    where.push("stream = ?");
+    params.push(Number(q.stream));
+  }
+  if (q.unpriced === "1" || q.unpriced === "true") where.push("price_source = 'unknown'");
+  if (since !== undefined && since > 0) {
+    where.push("ts >= ?");
+    params.push(since);
+  }
+  return { where, params };
+}
+
+const whereSql = (where: string[]) => (where.length > 0 ? `WHERE ${where.join(" AND ")}` : "");
+
+/** A `since` query value as epoch ms, or the fallback when absent; refuses negatives and NaN. */
+function usageSince(raw: string | undefined, fallback?: number): number | undefined {
+  if (raw === undefined || raw === "") return fallback;
+  const since = Number(raw);
+  if (!Number.isFinite(since) || since < 0) {
+    throw new HttpError(400, "invalid_request", "since must be epoch milliseconds");
+  }
+  return since;
+}
+
 export function createAdminApp(deps: AdminDeps): Hono {
   const {
     db,
@@ -1061,28 +1131,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
   app.get("/usage", (c) => {
     const q = c.req.query();
     const limit = Math.min(Math.max(Number(q.limit ?? 100) || 100, 1), 1000);
-    const where: string[] = [];
-    const params: (string | number)[] = [];
-    for (const [param, column] of [
-      ["key_id", "key_id"],
-      ["provider_id", "provider_id"],
-      ["credential_id", "credential_id"],
-      ["model", "model"],
-    ] as const) {
-      const v = q[param];
-      if (v) {
-        where.push(`${column} = ?`);
-        params.push(v);
-      }
-    }
+    const { where, params } = usageWhere(q, usageSince(q.since));
     if (q.before) {
+      const before = Number(q.before);
+      if (!Number.isFinite(before)) {
+        throw new HttpError(400, "invalid_request", "before must be a usage event id");
+      }
       where.push("id < ?");
-      params.push(Number(q.before));
+      params.push(before);
     }
     const rows = all<Record<string, unknown>>(
-      db.prepare(
-        `SELECT * FROM usage_events ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT ?`,
-      ),
+      db.prepare(`SELECT * FROM usage_events ${whereSql(where)} ORDER BY id DESC LIMIT ?`),
       ...params,
       limit,
     );
@@ -1091,16 +1150,17 @@ export function createAdminApp(deps: AdminDeps): Hono {
 
   app.get("/usage/summary", (c) => {
     const q = c.req.query();
-    const since = Number(q.since ?? now() - 86_400_000);
+    const since = usageSince(q.since, now() - 86_400_000)!;
     const group =
       q.group_by === "provider" ? "provider_id" : q.group_by === "key" ? "key_id" : "model";
+    const { where, params } = usageWhere(q, since);
     const rows = all<Record<string, unknown>>(
       db.prepare(
         `SELECT ${group} AS "group", COUNT(*) AS requests, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens,
                 SUM(cost_usd) AS cost_usd, SUM(price_source = 'unknown') AS unpriced_requests
-           FROM usage_events WHERE ts >= ? ${q.key_id ? "AND key_id = ?" : ""} GROUP BY ${group} ORDER BY cost_usd DESC`,
+           FROM usage_events ${whereSql(where)} GROUP BY ${group} ORDER BY cost_usd DESC`,
       ),
-      ...(q.key_id ? [since, q.key_id] : [since]),
+      ...params,
     );
     return c.json({ since, group_by: group, data: rows });
   });
@@ -1108,18 +1168,20 @@ export function createAdminApp(deps: AdminDeps): Hono {
   // Non-empty buckets only, aligned to multiples of `bucket_ms` since the epoch; the UI fills gaps.
   app.get("/usage/timeline", (c) => {
     const q = c.req.query();
-    const since = Number(q.since ?? now() - 86_400_000);
+    const since = usageSince(q.since, now() - 86_400_000)!;
     const bucketMs = Math.floor(Number(q.bucket_ms));
-    if (!Number.isFinite(since) || !Number.isFinite(bucketMs) || bucketMs < 1000) {
+    if (!Number.isFinite(bucketMs) || bucketMs < 1000) {
       throw new HttpError(400, "invalid_request", "bucket_ms must be an integer of at least 1000");
     }
+    const { where, params } = usageWhere(q, since);
     const rows = all<Record<string, unknown>>(
       db.prepare(
-        `SELECT CAST(ts / ?1 AS INTEGER) * ?1 AS ts, COUNT(*) AS requests, SUM(input_tokens) AS input_tokens,
-                SUM(output_tokens) AS output_tokens, SUM(cost_usd) AS cost_usd
-           FROM usage_events WHERE ts >= ?2 ${q.key_id ? "AND key_id = ?3" : ""} GROUP BY 1 ORDER BY 1`,
+        `SELECT CAST(ts / ${bucketMs} AS INTEGER) * ${bucketMs} AS ts, COUNT(*) AS requests,
+                SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, SUM(cost_usd) AS cost_usd,
+                SUM(CASE WHEN status = 'ok' THEN 0 ELSE 1 END) AS failed_requests
+           FROM usage_events ${whereSql(where)} GROUP BY 1 ORDER BY 1`,
       ),
-      ...(q.key_id ? [bucketMs, since, q.key_id] : [bucketMs, since]),
+      ...params,
     );
     return c.json({ since, bucket_ms: bucketMs, data: rows });
   });

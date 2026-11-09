@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
-import type { UsageBucket } from "@/api/types";
+import type { UsageBucket, UsageQuery } from "@/api/types";
 import { Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
 import {
@@ -17,19 +17,21 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatDateTime, formatInt, formatUsd } from "@/lib/format";
 import { fillBuckets, RANGES, type RangeKey } from "@/lib/timeline";
 
-type MetricKey = "requests" | "tokens" | "cost";
+type MetricKey = "requests" | "failed" | "tokens" | "cost";
 
 const METRICS: Record<
   MetricKey,
   { label: string; series: (keyof typeof CONFIG)[]; format: (n: number) => string }
 > = {
   requests: { label: "Requests", series: ["requests"], format: formatInt },
+  failed: { label: "Failures", series: ["failed_requests"], format: formatInt },
   tokens: { label: "Tokens", series: ["input_tokens", "output_tokens"], format: formatInt },
   cost: { label: "Cost", series: ["cost_usd"], format: formatUsd },
 };
 
 const CONFIG = {
   requests: { label: "Requests", color: "var(--primary)" },
+  failed_requests: { label: "Failed", color: "var(--destructive)" },
   input_tokens: { label: "Input tokens", color: "var(--primary)" },
   output_tokens: { label: "Output tokens", color: "var(--muted-foreground)" },
   cost_usd: { label: "Cost", color: "var(--primary)" },
@@ -39,17 +41,17 @@ const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFra
 const clock = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" });
 const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 
-/** Requests, tokens or cost over time for the selected range, from the server's bucketed timeline. */
-export function UsageChart({ range }: { range: RangeKey }) {
+/** Requests, failures, tokens or cost over time for the selected range and filters. */
+export function UsageChart({ range, query = {} }: { range: RangeKey; query?: UsageQuery }) {
   const [metric, setMetric] = useState<MetricKey>("requests");
   const { ms, bucketMs } = RANGES[range];
 
   const timeline = useQuery({
-    queryKey: qk.usageTimeline(range),
+    queryKey: qk.usageTimeline(range, query),
     queryFn: async () => {
       const until = Date.now();
       const since = ms === null ? 0 : until - ms;
-      const { data } = await api.usageTimeline(since, bucketMs);
+      const { data } = await api.usageTimeline(since, bucketMs, query);
       return fillBuckets(data, ms === null ? null : since, until, bucketMs);
     },
     refetchInterval: 15_000,

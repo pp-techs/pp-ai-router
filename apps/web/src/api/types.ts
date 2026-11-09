@@ -204,11 +204,24 @@ export interface UsageEvent {
   latency_ms: number;
 }
 
-export interface UsageFilter {
+/** The filter fields shared by the ledger, the summary and the timeline. */
+export interface UsageQuery {
   key_id?: string;
   provider_id?: string;
   credential_id?: string;
+  /** Exact requested-model match (API callers); the dashboard uses `q`. */
   model?: string;
+  /** Case-insensitive substring of the requested or upstream model name. */
+  q?: string;
+  /** One status, or a comma list when set through the API. */
+  status?: UsageStatus;
+  stream?: 0 | 1;
+  /** `1` narrows to events whose price could not be resolved. */
+  unpriced?: 1;
+}
+
+export interface UsageFilter extends UsageQuery {
+  since?: number;
   before?: number;
   limit?: number;
 }
@@ -228,6 +241,8 @@ export interface UsageBucket {
   /** Start of the bucket, ms since the epoch. */
   ts: number;
   requests: number;
+  /** Requests that did not end `ok` (error, aborted, no usage). */
+  failed_requests: number;
   input_tokens: number;
   output_tokens: number;
   cost_usd: number;

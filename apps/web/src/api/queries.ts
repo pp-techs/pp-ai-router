@@ -5,7 +5,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { toast } from "../lib/toast.ts";
-import type { AuditLogFilter, UsageFilter, UsageGroup } from "./types.ts";
+import type { AuditLogFilter, UsageFilter, UsageGroup, UsageQuery } from "./types.ts";
 
 /** Query keys are hierarchical: invalidating `providers` also refreshes every provider's credentials. */
 export const qk = {
@@ -19,10 +19,12 @@ export const qk = {
   oauthSession: (sessionId: string) => ["oauth-session", sessionId] as const,
   aliases: ["aliases"] as const,
   keys: ["keys"] as const,
-  usage: (filter: UsageFilter) => ["usage", "events", filter] as const,
+  usage: (filter: UsageFilter, range?: string) => ["usage", "events", range ?? "", filter] as const,
   usageEvents: ["usage", "events"] as const,
-  usageSummary: (group: UsageGroup, range: string) => ["usage", "summary", group, range] as const,
-  usageTimeline: (range: string) => ["usage", "timeline", range] as const,
+  usageSummary: (group: UsageGroup, range: string, filter: UsageQuery = {}) =>
+    ["usage", "summary", group, range, filter] as const,
+  usageTimeline: (range: string, filter: UsageQuery = {}) =>
+    ["usage", "timeline", range, filter] as const,
   auditLogs: (filter?: AuditLogFilter) => ["audit-logs", filter] as const,
   prices: (q: string) => ["pricing", "search", q] as const,
   priceLookup: (model: string) => ["pricing", "lookup", model] as const,

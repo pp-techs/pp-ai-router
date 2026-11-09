@@ -11,6 +11,7 @@ import {
   CLI_USER_AGENT,
   CLIENT_ID,
   CLIENT_SECRET,
+  EXPIRY_SKEW_MS,
   REDIRECT_URI,
   USER_AGENT,
   userAgentForWireModel,
@@ -238,7 +239,7 @@ describe("OAuth login (paste flow)", () => {
     expect(tokens).toEqual({
       accessToken: "at-1",
       refreshToken: "rt-1",
-      expiresAt: clock.now + HOUR,
+      expiresAt: clock.now + HOUR - EXPIRY_SKEW_MS,
       account: "alice@example.com",
       extra: { project_id: "proj-1" },
     });
@@ -391,7 +392,7 @@ describe("OAuth login (paste flow)", () => {
       expect(fresh).toEqual({
         accessToken: "at-1",
         refreshToken: "rt-1",
-        expiresAt: clock.now + HOUR,
+        expiresAt: clock.now + HOUR - EXPIRY_SKEW_MS,
         account: "alice@example.com",
         extra: { project_id: "proj-1" },
       });
@@ -1589,7 +1590,10 @@ describe("through the gateway", () => {
     });
     expect(done.json.status).toBe("complete");
     const [cred] = (await h.admin("GET", "/providers/agy/credentials")).json.data;
-    expect(cred).toMatchObject({ status: "active", expires_at: h.clock.now + HOUR });
+    expect(cred).toMatchObject({
+      status: "active",
+      expires_at: h.clock.now + HOUR - EXPIRY_SKEW_MS,
+    });
     expect(JSON.stringify(cred)).not.toContain("at-1");
 
     // Non-stream.

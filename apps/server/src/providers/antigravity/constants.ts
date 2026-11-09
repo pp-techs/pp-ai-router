@@ -31,6 +31,9 @@ export const REDIRECT_URI = "http://127.0.0.1:51121/callback";
 
 export const REQUEST_TIMEOUT_MS = 30_000;
 export const LOGIN_TTL_MS = 10 * 60_000;
+
+/** A token is treated as expired this long before Google says (opencodex `REFRESH_SKEW_MS`, omp `skew-ms=300000`). */
+export const EXPIRY_SKEW_MS = 5 * 60_000;
 export const ONBOARD_ATTEMPTS = 5;
 export const ONBOARD_POLL_MS = 2_000;
 

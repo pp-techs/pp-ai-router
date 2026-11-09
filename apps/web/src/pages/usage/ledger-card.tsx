@@ -1,16 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { ScrollTextIcon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
-import type { Provider, UsageEvent, UsageFilter, UsageStatus, VirtualKey } from "@/api/types";
-import { FormField } from "@/components/form-field";
-import { OptionSelect } from "@/components/option-select";
+import type { UsageEvent, UsageQuery, UsageStatus, VirtualKey } from "@/api/types";
 import { Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
 import { StatusBadge, type Tone } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -20,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDateTime, formatInt, formatLatency, formatUsd } from "@/lib/format";
+import { RANGES, type RangeKey } from "@/lib/timeline";
 
 const PAGE_SIZE = 50;
 
@@ -29,18 +27,6 @@ const STATUS_TONE: Record<UsageStatus, Tone> = {
   no_usage: "warn",
   error: "danger",
 };
-
-interface Draft {
-  key_id: string;
-  provider_id: string;
-  model: string;
-}
-
-const toFilter = (draft: Draft): UsageFilter => ({
-  ...(draft.key_id && { key_id: draft.key_id }),
-  ...(draft.provider_id && { provider_id: draft.provider_id }),
-  ...(draft.model.trim() && { model: draft.model.trim() }),
-});
 
 function EventRow({ event, keyName }: { event: UsageEvent; keyName: string }) {
   return (
@@ -84,90 +70,56 @@ function EventRow({ event, keyName }: { event: UsageEvent; keyName: string }) {
 /** Newest-first ledger. The server pages by `before=<id>`, so paging is a stack of cursors. */
 export function UsageLedgerCard({
   keys,
-  providers,
+  range,
+  query,
 }: {
   keys: VirtualKey[] | undefined;
-  providers: Provider[] | undefined;
+  range: RangeKey;
+  query: UsageQuery;
 }) {
-  const [draft, setDraft] = useState<Draft>({ key_id: "", provider_id: "", model: "" });
-  const [filter, setFilter] = useState<UsageFilter>({});
-  const [cursors, setCursors] = useState<(number | undefined)[]>([undefined]);
+  // A new filter set (or range) starts a new paging stack without an effect: stale stacks are ignored.
+  const filterKey = `${range}:${JSON.stringify(query)}`;
+  const [paging, setPaging] = useState<{ key: string; cursors: (number | undefined)[] }>({
+    key: "",
+    cursors: [undefined],
+  });
+  const cursors = paging.key === filterKey ? paging.cursors : [undefined];
   const before = cursors[cursors.length - 1];
 
   const events = useQuery({
-    queryKey: qk.usage({ ...filter, before, limit: PAGE_SIZE }),
-    queryFn: () => api.usage({ ...filter, before, limit: PAGE_SIZE }),
+    queryKey: qk.usage({ ...query, before, limit: PAGE_SIZE }, range),
+    queryFn: () => {
+      const { ms } = RANGES[range];
+      return api.usage({
+        ...query,
+        ...(ms !== null && { since: Date.now() - ms }),
+        before,
+        limit: PAGE_SIZE,
+      });
+    },
     // Only the newest page is live; older pages are immutable history.
     refetchInterval: before === undefined ? 10_000 : false,
   });
 
-  function apply(event: FormEvent) {
-    event.preventDefault();
-    setFilter(toFilter(draft));
-    setCursors([undefined]);
-  }
-
-  function reset() {
-    setDraft({ key_id: "", provider_id: "", model: "" });
-    setFilter({});
-    setCursors([undefined]);
-  }
-
   const keyName = (id: string) =>
     keys?.find((k) => k.id === id)?.name ?? `${id.slice(0, 8)}… (deleted)`;
-  const hasFilter = Object.keys(filter).length > 0;
+  const hasFilter = Object.keys(query).length > 0;
   const rows = events.data ?? [];
 
   return (
     <Panel title="Ledger" description="Request stream and per-call token breakdown." flush>
-      <form
-        onSubmit={apply}
-        className="flex flex-wrap items-end gap-3 border-b border-border bg-muted/30 p-4"
-      >
-        <FormField label="API key" className="w-auto min-w-40">
-          <OptionSelect
-            value={draft.key_id}
-            onValueChange={(v) => setDraft((d) => ({ ...d, key_id: v }))}
-            options={[
-              { value: "", label: "All keys" },
-              ...(keys?.map((k) => ({ value: k.id, label: k.name })) ?? []),
-            ]}
-          />
-        </FormField>
-        <FormField label="Provider" className="w-auto min-w-40">
-          <OptionSelect
-            value={draft.provider_id}
-            onValueChange={(v) => setDraft((d) => ({ ...d, provider_id: v }))}
-            options={[
-              { value: "", label: "All providers" },
-              ...(providers?.map((p) => ({ value: p.id, label: p.id })) ?? []),
-            ]}
-          />
-        </FormField>
-        <FormField label="Model (exact)" className="w-auto min-w-48">
-          <Input
-            value={draft.model}
-            placeholder="e.g. fast"
-            onChange={(e) => setDraft((d) => ({ ...d, model: e.target.value }))}
-          />
-        </FormField>
-        <Button type="submit">Apply</Button>
-        {hasFilter && (
-          <Button type="button" variant="outline" onClick={reset}>
-            Clear
-          </Button>
-        )}
-      </form>
-
       <QueryBoundary
         query={events}
         isEmpty={(list) => list.length === 0}
         empty={
           <EmptyState
             icon={ScrollTextIcon}
-            title={hasFilter ? "No events match these filters" : "No usage recorded yet"}
+            title={hasFilter ? "No events match these filters" : "No usage in this period"}
           >
-            {!hasFilter && "Requests sent through /v1 appear here."}
+            {!hasFilter &&
+              (range === "all"
+                ? "Requests sent through /v1 appear here."
+                : "Widen the time range or add a filter.")}
           </EmptyState>
         }
       >
@@ -199,7 +151,7 @@ export function UsageLedgerCard({
           variant="outline"
           size="sm"
           disabled={cursors.length === 1}
-          onClick={() => setCursors((c) => c.slice(0, -1))}
+          onClick={() => setPaging({ key: filterKey, cursors: cursors.slice(0, -1) })}
         >
           ← Newer
         </Button>
@@ -208,7 +160,9 @@ export function UsageLedgerCard({
           variant="outline"
           size="sm"
           disabled={rows.length < PAGE_SIZE}
-          onClick={() => setCursors((c) => [...c, rows[rows.length - 1]!.id])}
+          onClick={() =>
+            setPaging({ key: filterKey, cursors: [...cursors, rows[rows.length - 1]!.id] })
+          }
         >
           Older →
         </Button>

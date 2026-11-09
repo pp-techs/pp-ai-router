@@ -20,6 +20,8 @@ pp-ai-router is **not** a fork: the router, governance, pool, pricing, admin API
 
 **Last synced with upstream**: v2.97.0 (`cab7eb7d0`, 2026-11-03) for the `anthropic`, `claude-subscription`, `antigravity`, `chatgpt-subscription` and `kiro` adapters; oh-my-pi compared at `660a31dc33` (18.17.0), 2026-11-06. Use this commit as the base for the next `git diff`.
 
+**OAuth flows re-verified** (2026-11-09) at opencodex v2.99.0 (`667662903`) and oh-my-pi `21f1188cf8` (18.18.3): login/refresh code, client ids, scopes, endpoints, redirects, expiry skew and refresh-failure classification were compared for the four OAuth providers (Claude subscription, ChatGPT subscription, Antigravity, Kiro). The only drift was Antigravity's five-minute expiry skew, now ported (`EXPIRY_SKEW_MS`); opencodex's OAuth commits since the base are local credential-store locking, pool routing and public error mapping, which this gateway does not port. The adapters' wire behaviour since the base was **not** re-synced, so the base above still marks the last full provider sync.
+
 ## What was adapted
 
 Every adapted file starts with `// Adapted from lidge-jun/opencodex (MIT)` (43 files under `apps/server/src/providers/`). The port target is the canonical OpenAI chat-completions shape used by `ProviderAdapter` (`providers/adapter.ts`), instead of opencodex's Responses-API front end.

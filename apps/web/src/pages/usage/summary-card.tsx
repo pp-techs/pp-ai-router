@@ -3,7 +3,7 @@ import { ChartColumnIcon } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
-import type { UsageGroup, VirtualKey } from "@/api/types";
+import type { UsageGroup, UsageQuery, VirtualKey } from "@/api/types";
 import { OptionSelect } from "@/components/option-select";
 import { Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
@@ -15,18 +15,20 @@ const GROUPS: Record<UsageGroup, string> = { model: "Model", provider: "Provider
 export function UsageSummaryCard({
   keys,
   range,
+  query,
 }: {
   keys: VirtualKey[] | undefined;
   range: RangeKey;
+  query: UsageQuery;
 }) {
   const [group, setGroup] = useState<UsageGroup>("model");
 
   const summary = useQuery({
-    queryKey: qk.usageSummary(group, range),
+    queryKey: qk.usageSummary(group, range, query),
     // `since` is computed per fetch so the key stays stable while the window slides.
     queryFn: () => {
       const { ms } = RANGES[range]!;
-      return api.usageSummary(group, ms === null ? 0 : Date.now() - ms);
+      return api.usageSummary(group, ms === null ? 0 : Date.now() - ms, query);
     },
     refetchInterval: 15_000,
   });
