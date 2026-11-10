@@ -6,7 +6,19 @@ import {
   NATIVE_EFFORTS,
   normalizeKiroModelId,
 } from "./reasoning.ts";
-import { convertTools, createToolNames, normalizeToolId, type ClientTool } from "./tools.ts";
+import {
+  convertTools,
+  createToolNames,
+  KIRO_STRUCTURED_OUTPUT_TOOL_NAME,
+  normalizeToolId,
+  type ClientTool,
+} from "./tools.ts";
+import {
+  kiroStructuredOutputInstructions,
+  kiroStructuredOutputSpec,
+  kiroStructuredOutputTool,
+  type KiroStructuredOutputSpec,
+} from "./structured-output.ts";
 import { estimateInputTokens } from "./usage.ts";
 import type { RequestIdentity } from "./wire.ts";
 
@@ -52,6 +64,8 @@ export interface BuiltKiroRequest {
   nameMap: Map<string, string>;
   /** Heuristic prompt size, used when the stream reports no token counts. */
   estimatedInputTokens: number;
+  /** Present on a structured-output turn; the stream relays this tool's input as the answer. */
+  structured?: KiroStructuredOutputSpec;
 }
 
 const CONTINUATION_MESSAGE =
@@ -70,6 +84,9 @@ const REQUEST_CAP_EMPTY_NOTE =
   "[images omitted: exceeded the 100-image request cap; no images remain in this message]";
 
 const EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
+/** Budget for instructions this adapter injects, shared by the structured-output contract and schema. */
+const MAX_INJECTED_INSTRUCTION_CHARS = 16_384;
 
 interface UserTurn {
   kind: "user";
@@ -97,10 +114,19 @@ function validateCapabilities(body: Rec): void {
     throw new KiroRequestError("Kiro supports only automatic tool choice or tool_choice:none");
   if (typeof body.service_tier === "string")
     throw new KiroRequestError("Kiro does not support service tiers");
-  // The wire has no schema-constrained response mode; a caller expecting parseable JSON would get prose.
+  // The wire has no schema-constrained response mode, so json_schema/json_object are emulated
+  // through the private structured-output tool (structured-output.ts); any other format type would
+  // silently change the caller's contract.
   const format = isRec(body.response_format) ? body.response_format.type : undefined;
-  if (format !== undefined && format !== "text")
-    throw new KiroRequestError("Kiro does not support structured output (response_format)");
+  if (
+    format !== undefined &&
+    format !== "text" &&
+    format !== "json_object" &&
+    format !== "json_schema"
+  )
+    throw new KiroRequestError(
+      `Kiro does not support response_format type ${JSON.stringify(format)}`,
+    );
 }
 
 function readTools(tools: unknown): ClientTool[] {
@@ -110,6 +136,10 @@ function readTools(tools: unknown): ClientTool[] {
     if (!isRec(raw) || raw.type !== "function") continue;
     const fn = isRec(raw.function) ? raw.function : raw;
     if (typeof fn.name !== "string" || fn.name.length === 0) continue;
+    if (fn.name === KIRO_STRUCTURED_OUTPUT_TOOL_NAME)
+      throw new KiroRequestError(
+        `Kiro reserves the tool name ${JSON.stringify(KIRO_STRUCTURED_OUTPUT_TOOL_NAME)}`,
+      );
     out.push({
       name: fn.name,
       description: typeof fn.description === "string" ? fn.description : undefined,
@@ -277,6 +307,15 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const origin = identity.wireClient === "cli" ? "KIRO_CLI" : "AI_EDITOR";
 
+  // A structured-output turn advertises one private terminal tool whose input schema is the
+  // caller's format; a schema this emulation cannot enforce is refused before sending.
+  let structured: KiroStructuredOutputSpec | undefined;
+  try {
+    structured = kiroStructuredOutputSpec(body);
+  } catch (error) {
+    throw new KiroRequestError((error as Error).message);
+  }
+
   const names = createToolNames();
   const clientTools = readTools(body.tools);
   // Every listed name is validated and claimed even when tool_choice:none advertises none of them.
@@ -286,6 +325,9 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
     modelId,
     names,
   );
+  // The private terminal channel is not a client tool: it is advertised last, and even when
+  // tool_choice:none drops the ordinary tools, because it is the only way to answer in JSON.
+  const tools = structured ? [...toolSpecs, kiroStructuredOutputTool(structured)] : toolSpecs;
 
   const systemParts: string[] = [];
   const turns: Turn[] = [];
@@ -360,6 +402,10 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
           const fn = isRec(raw.function) ? raw.function : undefined;
           if (typeof fn?.name !== "string" || !fn.name)
             throw new KiroRequestError("tool_calls entries require function.name");
+          if (fn.name === KIRO_STRUCTURED_OUTPUT_TOOL_NAME)
+            throw new KiroRequestError(
+              `Kiro reserves the tool name ${JSON.stringify(KIRO_STRUCTURED_OUTPUT_TOOL_NAME)}`,
+            );
           const rawId =
             typeof raw.id === "string" && raw.id
               ? raw.id
@@ -415,6 +461,14 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
   if (turns.length === 0 && systemParts.length === 0)
     throw new KiroRequestError("messages must include at least one user/assistant/tool turn");
   if (notice) systemParts.push(notice);
+  if (structured)
+    systemParts.push(
+      kiroStructuredOutputInstructions(
+        structured,
+        toolSpecs.length > 0,
+        MAX_INJECTED_INSTRUCTION_CHARS,
+      ),
+    );
 
   if (turns.length === 0 || turns[0]?.kind === "assistant")
     turns.unshift({ kind: "user", content: CONTINUATION_MESSAGE, images: [], toolResults: [] });
@@ -459,10 +513,10 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
     const target = history.find((e) => e.userInputMessage)?.userInputMessage ?? currentMessage;
     target.content = `${systemParts.join("\n\n")}\n\n${target.content}`;
   }
-  if (toolSpecs.length > 0)
+  if (tools.length > 0)
     currentMessage.userInputMessageContext = {
       ...currentMessage.userInputMessageContext,
-      tools: toolSpecs,
+      tools,
     };
 
   const maxTokens =
@@ -507,5 +561,6 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
     payload,
     nameMap: names.nameMap,
     estimatedInputTokens: estimateInputTokens(history, current),
+    ...(structured ? { structured } : {}),
   };
 }

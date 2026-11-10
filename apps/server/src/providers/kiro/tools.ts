@@ -7,6 +7,16 @@ export interface ClientTool {
   parameters: unknown;
 }
 
+/**
+ * Private terminal channel for structured output (`response_format` json_schema/json_object).
+ *
+ * The CodeWhisperer wire has no schema-constrained response mode, but it does carry tool input
+ * schemas, and a tool call's input is JSON by construction. A turn that asks for structured output
+ * therefore advertises this tool and relays its input as the assistant's text. Reserved in the same
+ * collision domain as the client's tools, so a client tool can never claim it.
+ */
+export const KIRO_STRUCTURED_OUTPUT_TOOL_NAME = "codex_kiro_structured_output";
+
 const MAX_TOOL_DESCRIPTION = 1024;
 /** GPT-5.6 Sol is the one model verified to accept longer descriptions. */
 const MAX_TOOL_DESCRIPTION_LONG = 9_216;
@@ -42,7 +52,7 @@ const REJECTED_SCHEMA_KEYS: Record<string, true> = {
   dependentSchemas: true,
   dependentRequired: true,
   if: true,
-  // `then` is rejected too; see sanitizeSchema (a `then` key in a literal trips no-thenable).
+  // `then` is rejected too; see sanitizeKiroSchema (a `then` key in a literal trips no-thenable).
   else: true,
   contains: true,
   unevaluatedProperties: true,
@@ -53,25 +63,43 @@ const REJECTED_SCHEMA_KEYS: Record<string, true> = {
 /** Keys whose values map a *name* to a schema: names must survive even when they equal a rejected keyword. */
 const SCHEMA_MAP_KEYS: Record<string, true> = { properties: true, $defs: true, definitions: true };
 
+/**
+ * Keys whose values are JSON data rather than schemas. Recursing into them would strip
+ * keyword-named keys from the data itself and turn `const: {"format":"pdf"}` into `const: {}`,
+ * silently changing the value a tool argument must equal.
+ */
+const SCHEMA_LITERAL_KEYS: Record<string, true> = {
+  const: true,
+  enum: true,
+  default: true,
+  examples: true,
+};
+
 function sanitizeSchemaMap(value: unknown): unknown {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return sanitizeSchema(value);
-  const out: Record<string, unknown> = {};
-  for (const [name, child] of Object.entries(value)) out[name] = sanitizeSchema(child);
-  return out;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return sanitizeKiroSchema(value);
+  // fromEntries defines own properties: a property named "__proto__" stays a property instead of
+  // hitting the prototype setter and vanishing from the advertised schema.
+  return Object.fromEntries(
+    Object.entries(value).map(([name, child]) => [name, sanitizeKiroSchema(child)]),
+  );
 }
 
-function sanitizeSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sanitizeSchema);
+/** Strip the keywords Kiro's tool-spec validator rejects, everywhere in a schema tree. */
+export function sanitizeKiroSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeKiroSchema);
   if (!value || typeof value !== "object") return value;
-  const out: Record<string, unknown> = {};
+  const out: Array<[string, unknown]> = [];
   for (const [key, child] of Object.entries(value)) {
     if (key === "then" || Object.hasOwn(REJECTED_SCHEMA_KEYS, key)) continue;
     if (key === "required" && Array.isArray(child) && child.length === 0) continue;
-    out[key] = Object.hasOwn(SCHEMA_MAP_KEYS, key)
-      ? sanitizeSchemaMap(child)
-      : sanitizeSchema(child);
+    if (Object.hasOwn(SCHEMA_LITERAL_KEYS, key)) out.push([key, child]);
+    else
+      out.push([
+        key,
+        Object.hasOwn(SCHEMA_MAP_KEYS, key) ? sanitizeSchemaMap(child) : sanitizeKiroSchema(child),
+      ]);
   }
-  return out;
+  return Object.fromEntries(out);
 }
 
 const COMPOSITION_KEYS = ["oneOf", "anyOf", "allOf"] as const;
@@ -164,7 +192,8 @@ export interface ToolNames {
 
 /** One collision domain for advertised tools and replayed calls; `nameMap` restores client names on the response. */
 export function createToolNames(): ToolNames {
-  const used = new Set<string>();
+  // The proxy-owned structured-output tool is never a client tool, so its name can never be reused.
+  const used = new Set<string>([KIRO_STRUCTURED_OUTPUT_TOOL_NAME]);
   const byClientName = new Map<string, string>();
   const nameMap = new Map<string, string>();
   return {
@@ -197,7 +226,7 @@ export function convertTools(
       toolSpecification: {
         name: names.alias(tool.name),
         description: truncateDescription(tool.description || `Tool: ${tool.name}`, limit),
-        inputSchema: { json: ensureRootObjectType(sanitizeSchema(tool.parameters ?? {})) },
+        inputSchema: { json: ensureRootObjectType(sanitizeKiroSchema(tool.parameters ?? {})) },
       },
     },
   }));

@@ -10,24 +10,28 @@ type Version = readonly [major: number, minor: number];
 /**
  * Families that moved to adaptive thinking: they 400 on `thinking.type: "enabled"`, while older
  * families (Haiku 4.5, Sonnet 4.x, Opus <= 4.6) 400 on `adaptive`. Opus 4.6 / Sonnet 4.6 accept both.
- * Haiku 5.5 requires adaptive (Haiku 5.5 migration guide, 2026-10-08).
+ * Haiku 5.5 requires adaptive (Haiku 5.5 migration guide, 2026-10-08). Mythos 5+ does too; oh-my-pi
+ * 18.18.6's catalog resolves Sonnet/Fable/Mythos >= 5 to `anthropic-adaptive`.
  */
 const ADAPTIVE_THINKING_FROM: Record<string, Version> = {
   sonnet: [5, 0],
   opus: [4, 7],
   fable: [0, 0],
+  mythos: [5, 0],
   haiku: [5, 5],
 };
 
 /**
  * Families that 400 on any non-default `temperature`, `top_p` or `top_k`, with or without thinking.
  * Live 2026-09-29: Opus 4.7, 4.8, 5 and 5.5, Sonnet 5 and 5.5, Fable 5 and 5.1 reject them; Opus 4.6,
- * Sonnet 4.6 and Haiku 4.5 accept them. Haiku 5.5 rejects them too (migration guide, 2026-10-08).
+ * Sonnet 4.6 and Haiku 4.5 accept them. Haiku 5.5 rejects them too (migration guide, 2026-10-08), as
+ * does Mythos 5+ (oh-my-pi 18.18.6 catalog: `supports-sampling-params #false` for `mythos >= 5`).
  */
 const SAMPLING_REJECTED_FROM: Record<string, Version> = {
   sonnet: [5, 0],
   opus: [4, 7],
   fable: [0, 0],
+  mythos: [5, 0],
   haiku: [5, 5],
 };
 
@@ -91,11 +95,12 @@ export function supportsExplicitThinkingDisable(modelId: string): boolean {
 
 /**
  * Families that reject both `thinking: disabled` and `thinking: between_tools` (live 2026-09-29):
- * Opus 5.5 and every Fable. They think by default; a request cannot switch it off.
+ * Opus 5.5 and every Fable or Mythos. They think by default; a request cannot switch it off.
+ * (oh-my-pi 18.18.6 treats Fable/Mythos as one always-thinking generation.)
  */
 export function hasNoThinkingOffSwitch(modelId: string): boolean {
   const parsed = claudeFamilyVersion(modelId);
-  if (parsed?.family === "fable") return true;
+  if (parsed?.family === "fable" || parsed?.family === "mythos") return true;
   return parsed?.family === "opus" && parsed.major === 5 && parsed.minor === 5;
 }
 
@@ -106,10 +111,15 @@ export function rejectsCombinedSampling(modelId: string): boolean {
   return ["opus", "sonnet", "haiku"].includes(parsed.family) && atLeast(parsed, [4, 5]);
 }
 
-/** Forced `tool_choice` (`any` / `tool`) 400s on Opus 5.5, Fable 5.1+ and Sonnet 5.5+. */
+/**
+ * Forced `tool_choice` (`any` / `tool`) 400s on Opus 5.5, Fable 5.1+, Mythos 5+ and Sonnet 5.5+.
+ * oh-my-pi 18.18.6 disables forced tool choice for every Fable/Mythos (`supports-forced-tool-choice
+ * #false`); Mythos follows that in full, Fable keeps the measured 5.1 floor.
+ */
 export function rejectsForcedToolChoice(modelId: string): boolean {
   const parsed = claudeFamilyVersion(modelId);
   if (parsed?.family === "opus") return parsed.major === 5 && parsed.minor === 5;
+  if (parsed?.family === "mythos") return true;
   if (parsed?.family === "fable") return atLeast(parsed, [5, 1]);
   return parsed?.family === "sonnet" && atLeast(parsed, [5, 5]);
 }

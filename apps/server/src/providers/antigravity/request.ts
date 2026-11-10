@@ -371,10 +371,13 @@ export function buildRequest(input: {
   const modelId = typeof body.model === "string" ? body.model : "";
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const effort = typeof body.reasoning_effort === "string" ? body.reasoning_effort : undefined;
-  const { wireModelId, thinkingLevel } = resolveWireModel(modelId, effort);
-  const isGemini = wireModelId.startsWith("gemini-");
-  const isClaude = /claude/i.test(wireModelId);
+  const routedWireModelId = resolveWireModel(modelId, effort).wireModelId;
+  const isGemini = routedWireModelId.startsWith("gemini-");
+  const isClaude = /claude/i.test(routedWireModelId);
   const isImageModel = IMAGE_CAPABLE_MODELS.has(modelId);
+  // CCA serves thinking either way but withholds the thought text unless asked: ask when the client asked for reasoning.
+  const includeThoughts = effort !== undefined && effort !== "none" && isGemini && !isImageModel;
+  const { wireModelId, thinkingLevel } = resolveWireModel(modelId, effort, { includeThoughts });
 
   const format = isRecord(body.response_format) ? body.response_format : undefined;
   const jsonSchema =
@@ -465,8 +468,6 @@ export function buildRequest(input: {
         ? body.stop.filter((s) => typeof s === "string")
         : undefined;
   if (stops?.length) generationConfig.stopSequences = stops;
-  // CCA serves thinking either way but withholds the thought text unless asked: ask when the client asked for reasoning.
-  const includeThoughts = effort !== undefined && effort !== "none" && isGemini && !isImageModel;
   if (thinkingLevel || includeThoughts) {
     generationConfig.thinkingConfig = {
       ...(thinkingLevel ? { thinkingLevel } : {}),

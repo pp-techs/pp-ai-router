@@ -14,6 +14,7 @@ import { decodeEventStream } from "../src/providers/kiro/eventstream.ts";
 import { createKiroOAuth } from "../src/providers/kiro/oauth.ts";
 import { buildKiroRequest, KiroRequestError } from "../src/providers/kiro/request.ts";
 import { kiroChunks } from "../src/providers/kiro/stream.ts";
+import { estimateInputTokens } from "../src/providers/kiro/usage.ts";
 import {
   requestHeaders,
   resolveApiRegion,
@@ -546,6 +547,120 @@ describe("request building", () => {
     );
   });
 
+  it("emulates structured output through a private terminal tool", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        title: { type: "string", minLength: 1 },
+        kind: { const: { format: "pdf" } },
+      },
+      required: ["title"],
+      additionalProperties: false,
+    };
+    const built = buildKiroRequest(
+      {
+        model: "m",
+        messages: [{ role: "user", content: "title it" }],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "thread_title", description: "A title", schema },
+        },
+        tools: [weatherTool],
+      },
+      CLI,
+    );
+    const uim = wire(built.payload).conversationState.currentMessage.userInputMessage;
+    const specs = uim.userInputMessageContext!.tools as unknown as {
+      toolSpecification: { name: string; inputSchema: { json: Record<string, unknown> } };
+    }[];
+    expect(specs[1]!.toolSpecification.name).toBe("codex_kiro_structured_output");
+    expect(specs[0]!.toolSpecification.name).toMatch(/^get_weather_[0-9a-f]{8}$/);
+    // Kiro's rejected keywords are gone, but `const` is data and survives verbatim.
+    expect(specs[1]!.toolSpecification.inputSchema.json).toEqual({
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        kind: { const: { format: "pdf" } },
+      },
+      required: ["title"],
+    });
+    expect(built.structured).toMatchObject({ wrapped: false });
+    expect(built.structured?.strict).toBeUndefined();
+    expect(uim.content).toContain("[Final response format]");
+    expect(uim.content).toContain("Format name: thread_title.");
+    expect(uim.content).toContain("Format description: A title");
+    // The caller's schema is restated whole, because the advertised one is sanitized.
+    expect(uim.content).toContain(JSON.stringify(schema));
+    expect(uim.content).toContain("Ordinary assistant text is mid-task commentary");
+    // The private name is never in the client-name map.
+    expect([...built.nameMap.values()]).toEqual(["get weather"]);
+
+    // json_object asks only for "a single JSON object".
+    const loose = buildKiroRequest(
+      {
+        model: "m",
+        messages: [{ role: "user", content: "x" }],
+        response_format: { type: "json_object" },
+      },
+      CLI,
+    );
+    const looseUim = wire(loose.payload).conversationState.currentMessage.userInputMessage;
+    const looseSpec = looseUim.userInputMessageContext!.tools as unknown as {
+      toolSpecification: { name: string; inputSchema: { json: unknown } };
+    }[];
+    expect(looseSpec[0]!.toolSpecification.inputSchema.json).toEqual({ type: "object" });
+    expect(looseUim.content).toContain("a single JSON object");
+
+    // A non-object / composed root is wrapped so Kiro sees an object root; the definitions that
+    // root-relative $refs resolve against are hoisted with them.
+    const wrapped = buildKiroRequest(
+      {
+        model: "m",
+        messages: [{ role: "user", content: "x" }],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            schema: {
+              $ref: "#/$defs/answer",
+              $defs: { answer: { anyOf: [{ type: "object" }, { type: "array" }] } },
+            },
+          },
+        },
+      },
+      CLI,
+    );
+    const wrappedUim = wire(wrapped.payload).conversationState.currentMessage.userInputMessage;
+    const wrappedSpec = wrappedUim.userInputMessageContext!.tools as unknown as {
+      toolSpecification: { inputSchema: { json: Record<string, unknown> } };
+    }[];
+    expect(wrapped.structured?.wrapped).toBe(true);
+    expect(wrappedSpec[0]!.toolSpecification.inputSchema.json).toEqual({
+      type: "object",
+      properties: { value: { $ref: "#/$defs/answer" } },
+      required: ["value"],
+      $defs: { answer: { anyOf: [{ type: "object" }, { type: "array" }] } },
+    });
+    expect(wrappedUim.content).toContain("with the complete final JSON value in its `value`");
+
+    // A strict schema with an assertion this emulation cannot enforce is refused before sending.
+    expect(() =>
+      buildKiroRequest(
+        {
+          model: "m",
+          messages: [{ role: "user", content: "x" }],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              strict: true,
+              schema: { type: "object", properties: { a: { type: "string", pattern: "^a$" } } },
+            },
+          },
+        },
+        CLI,
+      ),
+    ).toThrow(/cannot be enforced/);
+  });
+
   it("refuses what the wire cannot express with a request error", () => {
     const base = { model: "m", messages: [{ role: "user", content: "x" }] };
     const bad = (extra: Record<string, unknown>, match: RegExp) => {
@@ -558,7 +673,22 @@ describe("request building", () => {
       /only automatic tool choice/,
     );
     bad({ service_tier: "flex" }, /service tiers/);
-    bad({ response_format: { type: "json_object" } }, /structured output/);
+    bad({ response_format: { type: "xml" } }, /response_format type/);
+    bad(
+      { response_format: { type: "json_schema", json_schema: { strict: true } } },
+      /requires a JSON object schema/,
+    );
+    bad(
+      {
+        tools: [
+          {
+            type: "function",
+            function: { name: "codex_kiro_structured_output", parameters: {} },
+          },
+        ],
+      },
+      /reserves the tool name/,
+    );
     bad(
       { messages: [{ role: "user", content: [{ type: "input_audio", input_audio: {} }] }] },
       /input_audio/,
@@ -778,6 +908,141 @@ describe("stream mapping", () => {
       ),
     );
     expect(plain.choices[0]!.message.content).toBe("<b> bold");
+  });
+
+  it("relays a validated structured-output call as JSON, never as a tool call", async () => {
+    const schema = {
+      type: "object",
+      properties: { answer: { type: "string" } },
+      required: ["answer"],
+    };
+    const structured = { ...ctx, structured: { schema, toolSchema: schema, wrapped: false } };
+    const call = (input: string) => [
+      event("toolUseEvent", { name: "codex_kiro_structured_output", toolUseId: "s1", input }),
+      event("toolUseEvent", { name: "codex_kiro_structured_output", toolUseId: "s1", stop: true }),
+    ];
+    const complete = async (
+      frames: Buffer[],
+      context: Parameters<typeof kiroChunks>[1] = structured,
+    ) => aggregateChunks(collectAsync(await collect(kiroChunks(bodyOf(frames), context))));
+
+    const answered = await complete([
+      text("Working on it."),
+      ...call('{"answer":"x"}'),
+      metadata({ ...usageBody, stopReason: "END_TURN" }),
+    ]);
+    // Commentary is withheld: a structured-output caller never receives prose.
+    expect(answered.choices[0]!.message).toEqual({
+      role: "assistant",
+      content: '{"answer":"x"}',
+    });
+    expect(answered.choices[0]!.finish_reason).toBe("stop");
+
+    // Text that already IS the requested JSON is accepted without asking again.
+    const asText = await complete([text('{"answer":"y"}'), metadata({ stopReason: "END_TURN" })]);
+    expect(asText.choices[0]!.message.content).toBe('{"answer":"y"}');
+
+    // ... but text cut by a stop that ended the inference is not an answer.
+    const cut = await complete([text('{"answer":"z"}'), metadata({ stopReason: "MAX_TOKENS" })]);
+    expect(cut.choices[0]!.message.content).toBeNull();
+    expect(cut.choices[0]!.finish_reason).toBe("length");
+
+    // An input that fails the light contract, prose, and an empty clean stop all fail.
+    await expect(
+      complete([...call('{"other":1}'), metadata({ stopReason: "END_TURN" })]),
+    ).rejects.toThrow(
+      /did not match the requested format: the root is missing a required property/,
+    );
+    await expect(
+      complete([text("not JSON"), metadata({ stopReason: "END_TURN" })]),
+    ).rejects.toThrow(/model answered with text that is not the requested JSON/);
+    await expect(complete([metadata({ stopReason: "END_TURN" })])).rejects.toThrow(
+      /the turn produced no answer/,
+    );
+
+    // The reserved name on a turn that did not advertise it is a protocol error.
+    await expect(
+      complete([...call('{"answer":"x"}'), metadata({ stopReason: "END_TURN" })], ctx),
+    ).rejects.toThrow(/this turn did not advertise/);
+  });
+
+  it("holds strict structured output to the whole schema", async () => {
+    const schema = {
+      type: "object",
+      properties: { n: { type: "integer" } },
+      required: ["n"],
+      additionalProperties: false,
+    };
+    const structured = {
+      ...ctx,
+      structured: { schema, strict: true, toolSchema: schema, wrapped: false },
+    };
+    const run = (input: string) =>
+      collect(
+        kiroChunks(
+          bodyOf([
+            event("toolUseEvent", { name: "codex_kiro_structured_output", toolUseId: "s1", input }),
+            event("toolUseEvent", {
+              name: "codex_kiro_structured_output",
+              toolUseId: "s1",
+              stop: true,
+            }),
+            metadata({ stopReason: "END_TURN" }),
+          ]),
+          structured,
+        ),
+      );
+    const ok = await aggregateChunks(collectAsync(await run('{"n":7}')));
+    expect(ok.choices[0]!.message.content).toBe('{"n":7}');
+    await expect(run('{"n":"7"}')).rejects.toThrow(/expected a JSON integer/);
+    await expect(run('{"n":7,"extra":1}')).rejects.toThrow(/a property the schema does not allow/);
+
+    // The wrapped form relays the value's own bytes, not a re-serialization.
+    const wrapped = {
+      ...ctx,
+      structured: {
+        schema: { anyOf: [{ type: "object" }, { type: "array" }] },
+        toolSchema: { type: "object", properties: { value: {} }, required: ["value"] },
+        wrapped: true,
+      },
+    };
+    const relayed = await aggregateChunks(
+      collectAsync(
+        await collect(
+          kiroChunks(
+            bodyOf([
+              event("toolUseEvent", {
+                name: "codex_kiro_structured_output",
+                toolUseId: "s1",
+                input: '{"value":[1,2]}',
+              }),
+              event("toolUseEvent", {
+                name: "codex_kiro_structured_output",
+                toolUseId: "s1",
+                stop: true,
+              }),
+              metadata({ stopReason: "END_TURN" }),
+            ]),
+            wrapped,
+          ),
+        ),
+      ),
+    );
+    expect(relayed.choices[0]!.message.content).toBe("[1,2]");
+  });
+
+  it("counts supplementary Han in the CJK bucket", () => {
+    const tokens = (content: string) =>
+      estimateInputTokens([], {
+        userInputMessage: { content, modelId: "m", origin: "AI_EDITOR" },
+      });
+    const han = "𠀀".repeat(100);
+    // 200 UTF-16 units at CJK 1.5 chars/token, plus 27 tokens of per-entry framing.
+    expect(tokens(han)).toBe(161);
+    // Adding Hangul or Latin never makes supplementary Han cheaper.
+    expect(tokens(`${han}한`)).toBe(161);
+    expect(tokens(`${han}abcd`)).toBe(164);
+    expect(tokens(han)).toBeGreaterThan(tokens("x".repeat(200)));
   });
 
   it("maps Kiro stop reasons to finish reasons", async () => {

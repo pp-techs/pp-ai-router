@@ -265,7 +265,7 @@ describe("requests", () => {
     expect(sent!.headers.get("user-agent")).toMatch(
       /^claude-cli\/\d+\.\d+\.\d+ \(external, cli\)$/,
     );
-    expect(sent!.headers.get("x-stainless-runtime-version")).toBe("v26.3.0");
+    expect(sent!.headers.get("x-stainless-runtime-version")).toBe("v26.12.1");
     expect(sent!.headers.get("x-client-request-id")).toBeNull();
 
     const [billing, identity, brief] = sent!.body.system!;

@@ -114,7 +114,8 @@ const EFFORT_WIRE_MAP: Record<string, Record<string, string>> = {
 
 /**
  * Base models whose every effort maps to a wire id that already encodes the tier. Sending
- * `thinkingLevel` beside such a suffix would state the effort twice.
+ * `thinkingLevel` beside such a suffix would state the effort twice, except when an opted-in
+ * Argon summary needs its matching level.
  */
 const SUFFIX_TIER_MODELS = new Set([
   GEMINI_ARGON,
@@ -122,6 +123,43 @@ const SUFFIX_TIER_MODELS = new Set([
   CLAUDE_OPUS_55,
   CLAUDE_SONNET_55,
 ]);
+
+/**
+ * Suffix-tier models that withhold `thought: true` text unless the request ALSO names its tier
+ * in `thinkingConfig.thinkingLevel`.
+ *
+ * Measured against live CCA (2026-10-27): `gemini-4-argon-high` with `{includeThoughts: true}`
+ * alone answers 200 with `thoughtsTokenCount` in the thousands and zero thought parts — the whole
+ * plan arrives as ordinary visible text. Sending `{thinkingLevel: "high", includeThoughts: true}`
+ * on the same wire id returns the thought parts. `gemini-3.8-flash-high` does not behave this way:
+ * its include-only request still returns thoughts, so it stays out of this set.
+ */
+const THOUGHT_LEVEL_REQUIRED_SUFFIX_MODELS = new Set([GEMINI_ARGON]);
+
+const SUFFIX_TIERS = ["low", "medium", "high"] as const;
+
+/** The tier a suffix wire id encodes, for models that need it repeated when thought text is asked for. */
+function suffixThoughtLevel(
+  wireModelId: string,
+  includeThoughts: boolean | undefined,
+): string | undefined {
+  if (!includeThoughts) return undefined;
+  for (const base of THOUGHT_LEVEL_REQUIRED_SUFFIX_MODELS) {
+    for (const tier of SUFFIX_TIERS) {
+      if (wireModelId === `${base}-${tier}`) return tier;
+    }
+  }
+  return undefined;
+}
+
+/** A suffix wire id plus the tier stated again when an opted-in summary requires it. */
+function suffixThoughtWire(
+  wireModelId: string,
+  includeThoughts: boolean | undefined,
+): { wireModelId: string; thinkingLevel?: string } {
+  const thinkingLevel = suffixThoughtLevel(wireModelId, includeThoughts);
+  return { wireModelId, ...(thinkingLevel ? { thinkingLevel } : {}) };
+}
 
 const DEFAULT_EFFORT: Record<string, string> = {
   "gemini-3.8-flash": "medium",
@@ -151,13 +189,15 @@ export function thinkingLevelForEffort(effort: string): string | undefined {
 /**
  * Resolves the router's upstream model + optional reasoning effort to the CCA wire model and the
  * `thinkingLevel` to send, in the reference's precedence order:
- * 0. retired Flash id -> 3.7 target + its tier; 1. suffix wire id / alias -> as is, no thinking level;
- * 1b. 3.7-style single wire id -> thinking level; 2/3. mapped Gemini base -> effort wire id;
- * 4. Claude with effort -> thinking level; 5. anything else -> identity.
+ * 0. retired Flash id -> 3.7 target + its tier; 1. suffix wire id / alias -> as is (plus the Argon
+ * tier when thought text was asked for); 1b. 3.7-style single wire id -> thinking level;
+ * 2/3. mapped Gemini base -> effort wire id; 4. Claude with effort -> thinking level;
+ * 5. anything else -> identity.
  */
 export function resolveWireModel(
   modelId: string,
   effort?: string,
+  options?: { includeThoughts?: boolean },
 ): { wireModelId: string; thinkingLevel?: string } {
   const level = effort ? thinkingLevelForEffort(effort) : undefined;
   const aliased = Object.hasOwn(MODEL_ALIASES, modelId) ? MODEL_ALIASES[modelId]! : modelId;
@@ -168,7 +208,7 @@ export function resolveWireModel(
       thinkingLevel: level ?? RETIRED_FLASH_TIERS[modelId]!,
     };
   }
-  if (!BASE_MODELS.includes(modelId)) return { wireModelId: aliased };
+  if (!BASE_MODELS.includes(modelId)) return suffixThoughtWire(aliased, options?.includeThoughts);
 
   if (Object.hasOwn(THINKING_LEVEL_MODELS, modelId)) {
     return {
@@ -183,10 +223,10 @@ export function resolveWireModel(
     if (requested && Object.hasOwn(effortMap, requested)) {
       const wireModelId = effortMap[requested]!;
       return SUFFIX_TIER_MODELS.has(modelId)
-        ? { wireModelId }
+        ? suffixThoughtWire(wireModelId, options?.includeThoughts)
         : { wireModelId, thinkingLevel: requested };
     }
-    return { wireModelId: effortMap[DEFAULT_EFFORT[modelId]!]! };
+    return suffixThoughtWire(effortMap[DEFAULT_EFFORT[modelId]!]!, options?.includeThoughts);
   }
 
   if (modelId.startsWith("claude-") && level) return { wireModelId: modelId, thinkingLevel: level };
