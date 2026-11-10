@@ -14,11 +14,25 @@ const LATIN_WIRE_EXPANSION = 1.2;
 const ENTRY_FRAMING_TOKENS = 27;
 const MIN_IMAGE_TOKENS = 256;
 
+// Sticky, so `lastIndex` pins the pair being judged instead of scanning ahead.
+const SUPPLEMENTARY_HAN = /\p{Script=Han}/uy;
+
 /** Hangul, Han and kana ranges. */
 function countCjk(text: string): number {
   let cjk = 0;
   for (let i = 0; i < text.length; i++) {
     const c = text.charCodeAt(i);
+    // Reuse a sticky Unicode matcher so astral Han needs no substring or per-character regex.
+    // A surrogate pair the caller wrote counts as its two UTF-16 units, matching the shared
+    // estimator's buckets: the Latin side of `text.length - cjk` must never absorb them.
+    if (c >= 0xd800 && c <= 0xdbff) {
+      SUPPLEMENTARY_HAN.lastIndex = i;
+      if (SUPPLEMENTARY_HAN.test(text)) {
+        cjk += 2;
+        i++;
+        continue;
+      }
+    }
     if (
       (c >= 0xac00 && c <= 0xd7a3) ||
       (c >= 0x1100 && c <= 0x11ff) ||

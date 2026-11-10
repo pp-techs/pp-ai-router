@@ -405,13 +405,14 @@ describe("request translation", () => {
       tool_choice: { type: "function", function: { name: "get_weather" } },
       parallel_tool_calls: false,
     });
-    // `strict` is on the wire only when the tool said so; the schema is Responses-safe.
+    // Chat's non-strict tool default is spelled out on the Responses wire; `strict: true` is kept.
     expect(out.tools).toEqual([
       {
         type: "function",
         name: "get_weather",
         description: "Weather of a city",
         parameters: WEATHER.function.parameters,
+        strict: false,
       },
       expect.objectContaining({ name: "strict_tool", strict: true }),
     ]);
@@ -879,7 +880,7 @@ describe("adapter", () => {
       "x-client-request-id": "conv-1",
       "x-codex-routing-hint": "model=gpt-5.6-sol",
     });
-    expect(USER_AGENT).toBe("omp/18.17.0");
+    expect(USER_AGENT).toBe("omp/18.18.6");
     // codex-rs (and omp since 18.17) sends `OpenAI-Beta` only on the WebSocket handshake: HTTP carries none.
     expect(sent.headers["openai-beta"]).toBeUndefined();
     expect(sent.headers["thread-id"]).toMatch(UUID);

@@ -454,10 +454,17 @@ describe("anthropic adapter: request mapping", () => {
       tools: [weatherTool, other],
       tool_choice: forced,
     });
+    await chat(h, key, {
+      model: "claude/claude-mythos-5-1",
+      tools: [weatherTool, other],
+      tool_choice: forced,
+    });
     expect(up.calls[0]!.body.tool_choice).toEqual({ type: "auto" });
     expect(up.calls[0]!.body.tools.map((t: { name: string }) => t.name)).toEqual(["get_weather"]);
     expect(up.calls[1]!.body.tool_choice).toEqual({ type: "tool", name: "get_weather" });
     expect(up.calls[1]!.body.tools).toHaveLength(2);
+    expect(up.calls[2]!.body.tool_choice).toEqual({ type: "auto" });
+    expect(up.calls[2]!.body.tools.map((t: { name: string }) => t.name)).toEqual(["get_weather"]);
   });
 
   it("ends an assistant-tail history with a user turn, as models without prefill require", async () => {
@@ -598,6 +605,14 @@ describe("anthropic adapter: request mapping", () => {
       expect(haiku.output_config).toEqual({ effort: "low" });
       expect(haiku).not.toHaveProperty("temperature");
 
+      const mythos = await run("claude/claude-mythos-5-1", {
+        reasoning_effort: "low",
+        temperature: 0.3,
+      });
+      expect(mythos.thinking).toEqual({ type: "adaptive", display: "summarized" });
+      expect(mythos.output_config).toEqual({ effort: "low" });
+      expect(mythos).not.toHaveProperty("temperature");
+
       const off = (model: string, extra: Record<string, unknown>) => run(`claude/${model}`, extra);
       expect((await off("claude-haiku-5-5", { reasoning_effort: "none" })).thinking).toEqual({
         type: "disabled",
@@ -623,6 +638,9 @@ describe("anthropic adapter: request mapping", () => {
         },
       );
       expect(await off("claude-fable-5", { thinking: { type: "disabled" } })).not.toHaveProperty(
+        "thinking",
+      );
+      expect(await off("claude-mythos-5-1", { thinking: { type: "disabled" } })).not.toHaveProperty(
         "thinking",
       );
       expect(await off("claude-opus-5-5", { reasoning_effort: "none" })).not.toHaveProperty(

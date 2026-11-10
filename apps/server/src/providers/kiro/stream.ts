@@ -17,6 +17,15 @@ import {
   type KiroTokenUsage,
 } from "./events.ts";
 import { ThinkTagParser, type ThinkPart } from "./think-tags.ts";
+import { KIRO_STRUCTURED_OUTPUT_TOOL_NAME } from "./tools.ts";
+import {
+  isKiroStructuredCleanStop,
+  KIRO_STRUCTURED_EMPTY_FAILURE,
+  KIRO_STRUCTURED_TEXT_FAILURE,
+  parseKiroStructuredText,
+  parseKiroStructuredToolInput,
+  type KiroStructuredOutputSpec,
+} from "./structured-output.ts";
 import { estimateOutputTokens } from "./usage.ts";
 
 export interface KiroStreamContext {
@@ -26,6 +35,8 @@ export interface KiroStreamContext {
   nameMap: ReadonlyMap<string, string>;
   /** Prompt estimate used when the stream reports no token counts. */
   estimatedInputTokens: number;
+  /** Present on a structured-output turn: the private tool's input is relayed as the answer. */
+  structured?: KiroStructuredOutputSpec;
 }
 
 interface OpenTool {
@@ -77,18 +88,67 @@ export async function* kiroChunks(
   let sawOutput = false;
   let usage: KiroTokenUsage | undefined;
   let stopReason: string | undefined;
+  const structured = ctx.structured;
+  /**
+   * Assistant text held on a structured-output turn. The caller asked for JSON, so text is
+   * commentary until the private tool's validated input (or a clean-stop text answer) settles the
+   * turn; it is emitted once a real tool call proves the turn continues, and withheld otherwise.
+   */
+  const prose: string[] = [];
+  /** The validated JSON answer from the private structured-output tool. */
+  let structuredJson: string | undefined;
+
+  const takeProse = (): string => {
+    const text = prose.join("");
+    prose.length = 0;
+    return text;
+  };
+
+  const proseChunks = (): OpenAIChunk[] => {
+    const text = takeProse();
+    if (!text) return [];
+    sawOutput = true;
+    return [chunk(meta, { content: text })];
+  };
 
   const emitText = (parts: ThinkPart[]): OpenAIChunk[] =>
-    parts.map(({ kind, text }) => {
-      output.push(text);
-      if (text.trim()) sawOutput = true;
-      return kind === "reasoning"
-        ? chunk(meta, { reasoning_content: text })
-        : chunk(meta, { content: text });
-    });
+    parts
+      .map(({ kind, text }) => {
+        output.push(text);
+        if (kind === "text" && structured) {
+          // The validated answer is terminal: text after it is not part of the turn's output.
+          if (structuredJson !== undefined) return undefined;
+          if (toolCalls === 0) {
+            prose.push(text);
+            return undefined;
+          }
+        }
+        if (text.trim()) sawOutput = true;
+        return kind === "reasoning"
+          ? chunk(meta, { reasoning_content: text })
+          : chunk(meta, { content: text });
+      })
+      .filter((c): c is OpenAIChunk => c !== undefined);
 
-  const finishTool = (tool: OpenTool): OpenAIChunk => {
+  /**
+   * Close one tool call. The private structured-output tool is terminal: its input is validated and
+   * relayed as the answer instead of a tool call. Every other call is emitted whole, as before.
+   */
+  const finishTool = (tool: OpenTool): OpenAIChunk | undefined => {
     const input = tool.input.join("");
+    if (tool.name === KIRO_STRUCTURED_OUTPUT_TOOL_NAME) {
+      if (!structured)
+        throw new Error(
+          "Kiro response protocol error: it called the reserved structured-output tool this turn did not advertise",
+        );
+      if (structuredJson !== undefined)
+        throw new Error("Kiro returned more than one private structured-output tool call");
+      const parsed = parseKiroStructuredToolInput(structured, input);
+      if ("error" in parsed) throw new Error(parsed.error);
+      structuredJson = parsed.json;
+      prose.length = 0;
+      return undefined;
+    }
     if (!isCompleteToolInput(input))
       throw new Error(truncationMessage("incomplete tool input JSON"));
     sawOutput = true;
@@ -166,7 +226,11 @@ export async function* kiroChunks(
         if (ev.stop === true) {
           const done: OpenTool = open;
           open = null;
-          yield finishTool(done);
+          // A real tool call proves the turn continues, so held text becomes ordinary commentary;
+          // the private structured-output call supersedes it instead.
+          if (done.name !== KIRO_STRUCTURED_OUTPUT_TOOL_NAME) yield* proseChunks();
+          const finished = finishTool(done);
+          if (finished) yield finished;
         }
         break;
       }
@@ -194,13 +258,47 @@ export async function* kiroChunks(
   yield* emitText(think.flush());
   if (open) {
     const tool: OpenTool = open;
-    if (!isCompleteToolInput(tool.input.join("")))
+    // A structured call left open at end of stream goes through validation like a closed one; every
+    // other open call keeps the truncation guard.
+    if (tool.name !== KIRO_STRUCTURED_OUTPUT_TOOL_NAME && !isCompleteToolInput(tool.input.join("")))
       throw new Error(truncationMessage("stream ended before tool stop"));
-    yield finishTool(tool);
+    const finished = finishTool(tool);
+    if (finished) yield finished;
   }
 
   if (stopReason?.trim().toUpperCase() === "MODEL_CONTEXT_WINDOW_EXCEEDED")
     throw new Error("Kiro stopped because the model context window was exhausted");
+
+  if (structured) {
+    if (structuredJson !== undefined) {
+      prose.length = 0;
+      sawOutput = true;
+      yield chunk(meta, { content: structuredJson });
+    } else if (toolCalls === 0) {
+      // A clean stop with text that already IS the requested JSON has answered; the schema is
+      // checked exactly as it would be on a tool call.
+      if (isKiroStructuredCleanStop(stopReason?.trim().toUpperCase())) {
+        const text = takeProse();
+        const json = parseKiroStructuredText(structured, text);
+        if (json === undefined)
+          throw new Error(
+            text.trim() ? KIRO_STRUCTURED_TEXT_FAILURE : KIRO_STRUCTURED_EMPTY_FAILURE,
+          );
+        sawOutput = true;
+        yield chunk(meta, { content: json });
+      } else {
+        // A stop that ended the inference (MAX_TOKENS, a filter, an exhausted context window) is
+        // never mistaken for an answer, even when its prefix parses: the stop keeps its own
+        // terminal and the held prose is withheld from a structured-output caller.
+        if (prose.length > 0) sawOutput = true;
+        prose.length = 0;
+      }
+    } else {
+      // A real tool call already flushed the commentary around it.
+      prose.length = 0;
+    }
+  }
+
   // A tool-less turn Kiro refuses arrives with no content at all. It ends as a `content_filter` stop
   // rather than the empty-stream failure, which would be retried (or failed over) only to be refused
   // again. A stream with no content and no filter stop is still an empty-stream failure.

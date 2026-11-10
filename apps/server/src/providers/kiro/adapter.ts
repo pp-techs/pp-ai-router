@@ -127,6 +127,7 @@ export function createKiroAdapter(options: KiroOAuthOptions = {}): ProviderAdapt
           model: String(body.model),
           nameMap: built.nameMap,
           estimatedInputTokens: built.estimatedInputTokens,
+          ...(built.structured ? { structured: built.structured } : {}),
         }),
         stream,
       );

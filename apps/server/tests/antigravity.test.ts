@@ -499,6 +499,27 @@ describe("model mapping", () => {
       wireModelId: "gemini-4-argon-high",
     });
     expect(resolveWireModel("gemini-4-argon-high")).toEqual({ wireModelId: "gemini-4-argon-high" });
+    // Argon withholds thought text unless the suffix tier is repeated; other suffix families do not.
+    expect(resolveWireModel("gemini-4-argon", "high", { includeThoughts: true })).toEqual({
+      wireModelId: "gemini-4-argon-high",
+      thinkingLevel: "high",
+    });
+    expect(resolveWireModel("gemini-4-argon", undefined, { includeThoughts: true })).toEqual({
+      wireModelId: "gemini-4-argon-medium",
+      thinkingLevel: "medium",
+    });
+    expect(resolveWireModel("gemini-4-argon-low", undefined, { includeThoughts: true })).toEqual({
+      wireModelId: "gemini-4-argon-low",
+      thinkingLevel: "low",
+    });
+    expect(resolveWireModel("gemini-3.8-flash", "low", { includeThoughts: true })).toEqual({
+      wireModelId: "gemini-3.8-flash-low",
+    });
+    // An effort that is only an inherited object key is not a tier: fall back to the default.
+    expect(resolveWireModel("gemini-4-argon", "toString", { includeThoughts: true })).toEqual({
+      wireModelId: "gemini-4-argon-medium",
+      thinkingLevel: "medium",
+    });
     expect(resolveWireModel("claude-opus-5-5", "low")).toEqual({
       wireModelId: "claude-opus-5-5-low",
     });
@@ -737,6 +758,14 @@ describe("request compilation", () => {
     const flash = build({ messages: user, reasoning_effort: "high" }).env;
     expect(flash.model).toBe("gemini-3.8-flash-high");
     expect(flash.request.generationConfig).toEqual({ thinkingConfig: { includeThoughts: true } });
+
+    // Argon withholds thought parts unless the suffix tier is stated again.
+    const argon = build({ messages: user, model: "gemini-4-argon", reasoning_effort: "high" }).env;
+    expect(argon.model).toBe("gemini-4-argon-high");
+    expect(argon.request.generationConfig.thinkingConfig).toEqual({
+      thinkingLevel: "high",
+      includeThoughts: true,
+    });
 
     const pro = build({ messages: user, model: "gemini-3.1-pro", reasoning_effort: "low" }).env;
     expect(pro.model).toBe("gemini-3.1-pro-low");
@@ -1518,6 +1547,76 @@ describe("adapter.call", () => {
     expect(google.generations()).toHaveLength(7);
   });
 
+  it("drops a session's replayed signatures after a real HTTP 400 with unrelated text", async () => {
+    const { google, call } = setup();
+    google.state.validTokens.add("tok");
+    const messages = [
+      { role: "user", content: "run the tool" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "c1", type: "function", function: { name: "lookup", arguments: '{"a":1}' } },
+        ],
+      },
+      { role: "tool", tool_call_id: "c1", content: "ok" },
+    ];
+    // Turn 1: upstream mints a signature, which this session's replay cache remembers.
+    const seed = buildRequest({
+      baseUrl: "https://x.test",
+      token: "t",
+      project: "proj-1",
+      body: { model: "gemini-3.1-pro", messages: [messages[0]] },
+      stream: true,
+    });
+    const mapper = new GeminiMapper({
+      model: "gemini-3.1-pro",
+      wireModelId: "gemini-pro-agent",
+      sessionId: seed.sessionId,
+      restoreToolName: (n) => n,
+    });
+    mapper.push(
+      frame({
+        candidates: [
+          {
+            content: {
+              parts: [{ functionCall: { name: "lookup", args: { a: 1 } }, thoughtSignature: SIG }],
+            },
+            finishReason: "STOP",
+          },
+        ],
+      }),
+    );
+    const replay = () =>
+      JSON.parse(
+        buildRequest({
+          baseUrl: "https://x.test",
+          token: "t",
+          project: "proj-1",
+          body: { model: "gemini-3.1-pro", messages },
+          stream: true,
+        }).body,
+      ).request;
+    expect(replay().contents[1].parts[0].thoughtSignature).toBe(SIG);
+
+    // Turn 2 replays it, and Google rejects the request with a real HTTP 400 whose text never names
+    // a signature (so the parsers' text-gated clear would not fire).
+    google.state.generate.push(
+      Response.json(
+        { error: { code: 400, status: "INVALID_ARGUMENT", message: "bad model" } },
+        { status: 400 },
+      ),
+    );
+    const res = await call({ body: { model: "gemini-3.1-pro", messages } });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("bad model");
+    // No resend: payload rejection stays final.
+    expect(google.generations()).toHaveLength(1);
+
+    // Turn 3 must not replay the rejected signature; the first call falls back to the sentinel.
+    expect(replay().contents[1].parts[0].thoughtSignature).toBe("skip_thought_signature_validator");
+  });
+
   it("fails a non-stream answer that carries no candidate", async () => {
     const { google, call } = setup();
     google.state.validTokens.add("tok");
@@ -1546,7 +1645,9 @@ describe("through the gateway", () => {
     const h = createHarness({}, { adapters: { ...ADAPTERS, [adapter.type]: adapter } });
     Object.defineProperty(clock, "now", {
       get: () => h.clock.now,
-      set: (v: number) => (h.clock.now = v),
+      set: (v: number) => {
+        h.clock.now = v;
+      },
     });
     expect((await h.admin("POST", "/providers", { id: "agy", type: "antigravity" })).status).toBe(
       201,

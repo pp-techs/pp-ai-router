@@ -6,6 +6,7 @@ import { isRecord } from "./json.ts";
 import { ANTIGRAVITY_MODELS } from "./models.ts";
 import { fetchAntigravityQuota } from "./quota.ts";
 import { createAntigravityOAuth, type OAuthDeps } from "./oauth.ts";
+import { clearReplay } from "./replay.ts";
 import { buildRequest, UnsupportedRequestError, type BuiltRequest } from "./request.ts";
 import { chunksFromJson, chunksFromSse, GeminiMapper } from "./stream.ts";
 import { repairInvalidRequestBody } from "./wire-compiler.ts";
@@ -115,7 +116,16 @@ export function createAntigravityAdapter(deps: OAuthDeps = {}): ProviderAdapter 
           res = await send(repaired);
         }
       }
-      if (!res.ok) return withRetryHint(res);
+      if (!res.ok) {
+        // A rejected replay usually arrives as a real HTTP 400, and this layer returns a non-ok
+        // response without ever reaching the parsers' clear-on-invalid. The normalized error text
+        // keeps only Google's message, so a 400 whose text names neither a signature nor an invalid
+        // argument (for example "bad model") still counts as an invalid-argument rejection and drops
+        // the session's replay entry, so the next turn does not replay the rejected signature until
+        // the TTL expires. The rejected request itself is not resent (payload rejection is final).
+        if (res.status === 400) clearReplay(built.wireModelId, built.sessionId);
+        return withRetryHint(res);
+      }
       if (!res.body) throw new Error("Antigravity returned an empty response body");
 
       const mapper = new GeminiMapper({

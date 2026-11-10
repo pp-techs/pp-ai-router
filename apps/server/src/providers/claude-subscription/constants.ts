@@ -39,6 +39,8 @@ export const OAUTH_BETA = "oauth-2025-04-20";
  * Betas of a Claude Code agent request (one with tools or thinking); omp's `claudeCodeAgentBetaDefaults`.
  * `effort` is added when the request asks for it. `context-1m` is deliberately absent: a subscription has
  * no long-context credit balance, so a 1M beta is answered with a 429 whatever the prompt size.
+ * `mid-conversation-system-2026-04-07` is no longer sent: omp dropped it at 18.18.6 because the
+ * mid-conversation system role is generally available.
  * omp also sends `fallback-credit-2026-06-01`; the fallback-credit redemption it belongs to is not ported.
  */
 export const AGENT_BETAS: readonly string[] = [
@@ -48,7 +50,6 @@ export const AGENT_BETAS: readonly string[] = [
   "thinking-token-count-2026-05-13",
   "context-management-2025-06-27",
   "prompt-caching-scope-2026-01-05",
-  "mid-conversation-system-2026-04-07",
 ];
 /** Betas of a utility request (no tools, no thinking); omp's `claudeCodeUtilityBetaDefaults`. */
 export const UTILITY_BETAS: readonly string[] = [
@@ -69,7 +70,6 @@ export const ACCOUNT_BETAS = [
   "redact-thinking-2026-02-12",
   "context-management-2025-06-27",
   "prompt-caching-scope-2026-01-05",
-  "mid-conversation-system-2026-04-07",
   "advanced-tool-use-2025-11-20",
   "effort-2025-11-24",
   "extended-cache-ttl-2025-04-11",
@@ -90,11 +90,11 @@ export const BUILTIN_TOOLS: Readonly<Record<string, true>> = {
   computer: true,
 };
 
-/** `@anthropic-ai/sdk` version the Claude Code CLI bundles; pinned here so it is trivial to bump. */
-export const SDK_VERSION = "0.112.1";
+/** `@anthropic-ai/sdk` version the Claude Code CLI bundles; pinned here so it is trivial to bump (omp 18.18.6). */
+export const SDK_VERSION = "0.128.0";
 
-/** Claude Code CLI release the requests present; replaced at run time when Anthropic names a newer minimum. */
-export const DEFAULT_CLI_VERSION = "2.1.280";
+/** Claude Code CLI release the requests present; replaced at run time when Anthropic names a newer minimum (omp 18.18.6). */
+export const DEFAULT_CLI_VERSION = "2.1.321";
 
 /** What the Stainless SDK reports for `process.platform` / `process.arch`. */
 function stainlessOs(platform: string): string {
@@ -128,7 +128,7 @@ function stainlessArch(arch: string): string {
  * The Node release the CLI reports as its runtime. Pinned like the SDK version, not read from
  * `process.version`: the router runs on Bun, whose `process.version` names a different, older line.
  */
-const NODE_RUNTIME_VERSION = "v26.3.0";
+const NODE_RUNTIME_VERSION = "v26.12.1";
 
 /** The headers of the real Claude Code CLI; a valid token behind an empty header set is a non-first-party signature. */
 export const CLAUDE_CODE_HEADERS: Readonly<Record<string, string>> = {

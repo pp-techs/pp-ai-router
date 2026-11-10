@@ -3,7 +3,8 @@
 // convertOpenAICodexResponsesTools, normalizeCodexToolChoice), providers/openai-shared.ts
 // (normalizeOpenAIPromptCacheKey, convertResponses* helpers), utils/schema/normalize.ts
 // (sanitizeSchemaForOpenAIResponses) and lidge-jun/opencodex (MIT) for the chat-completions side
-// (response_format, message roles), which omp's agent context has no counterpart for.
+// (response_format, message roles, the non-strict tool default), which omp's agent context has no
+// counterpart for.
 /**
  * Canonical OpenAI chat-completions request -> Codex Responses request body (`POST {base}/codex/responses`).
  */
@@ -182,8 +183,10 @@ function toTools(tools: unknown): Json[] | undefined {
       parameters: sanitizeToolSchema(
         isRecord(fn.parameters) ? fn.parameters : { type: "object", properties: {} },
       ),
-      // Like omp: `strict` is only on the wire when the tool said so.
-      ...(typeof fn.strict === "boolean" ? { strict: fn.strict } : {}),
+      // Chat Completions reads an omitted `strict` as false, while the Responses wire reads it as
+      // strict: an omitted flag would turn optional/alternative arguments into required ones, so the
+      // Chat default is spelled out. A client that said `strict: true` or `strict: false` keeps it.
+      strict: fn.strict === undefined ? false : fn.strict,
     });
   }
   return out.length > 0 ? out : undefined;
