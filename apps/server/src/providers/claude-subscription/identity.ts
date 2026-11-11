@@ -29,15 +29,18 @@ function newer(a: string, b: string): boolean {
 
 /**
  * Adopts the minimum release an Anthropic `claude_code_version_too_old` rejection names, for the rest
- * of the process, so a stale pinned version costs one retried request instead of an outage. True only
- * when the presented version actually went up: callers retry on true, so a repeated rejection at the
- * same version cannot loop.
+ * of the process, so a stale pinned version costs one retried request instead of an outage. `sentVersion`
+ * is the version the failed request actually presented: concurrent first requests all send the pinned
+ * version, so judging against the process-wide adopted one would let all but the first skip their retry
+ * (oh-my-pi `b328cf183f`). Adoption stays process-wide and only ever moves forward. True when the required
+ * release is newer than `sentVersion` — callers retry on true, so a rejection at the same version cannot
+ * loop.
  */
-export function adoptRequiredVersion(rejection: string): boolean {
+export function adoptRequiredVersion(rejection: string, sentVersion: string): boolean {
   if (!rejection.includes("claude_code_version_too_old")) return false;
   const required = REQUIRED_VERSION.exec(rejection)?.[1];
-  if (!required || !newer(required, cliVersion())) return false;
-  adoptedVersion = required;
+  if (!required || !newer(required, sentVersion)) return false;
+  if (adoptedVersion === null || newer(required, adoptedVersion)) adoptedVersion = required;
   return true;
 }
 

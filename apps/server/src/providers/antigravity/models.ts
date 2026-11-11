@@ -26,10 +26,13 @@ const RETIRED_FLASH_TIERS: Record<string, string> = {
 
 /**
  * Gemini 4 Argon: one wire id per tier, served only to the CLI User-Agent (see
- * `userAgentForWireModel`) and only to AI Ultra / Enterprise accounts. Claude 5.5: same per-tier
- * suffix family, 1,000,000 tokens, IDE User-Agent.
+ * `userAgentForWireModel`) and only to AI Ultra / Enterprise accounts. Gemini 4 Carbon: the same
+ * per-tier wire family and CLI-only User-Agent; upstream lists it through live discovery only, so
+ * we pin it here because the static list is the whole story. Claude 5.5: same per-tier suffix
+ * family, 1,000,000 tokens, IDE User-Agent.
  */
 const GEMINI_ARGON = "gemini-4-argon";
+const GEMINI_CARBON = "gemini-4-carbon";
 const CLAUDE_OPUS_55 = "claude-opus-5-5";
 const CLAUDE_SONNET_55 = "claude-sonnet-5-5";
 
@@ -37,9 +40,12 @@ const CLAUDE_SONNET_55 = "claude-sonnet-5-5";
 // Upstream trimmed its static picker to 3.8 Flash, 4 Argon, Opus 5.5 and Sonnet 5.5 because the
 // 3.7 Flash and 3.1 Pro wire ids 404 live as of 2026-10-14. We keep the older entries (selections
 // still route by name) and add the new ones; Argon only answers AI Ultra/Enterprise accounts.
+// Gemini 4 Carbon is discovery-listed upstream; it is pinned here because the static list is the
+// whole story in the router.
 const BASE_MODELS = [
   "gemini-3.8-flash",
   GEMINI_ARGON,
+  GEMINI_CARBON,
   CLAUDE_OPUS_55,
   CLAUDE_SONNET_55,
   "gemini-3.7-flash",
@@ -58,6 +64,7 @@ const BASE_MODELS = [
 const MODEL_FACTS: Record<string, { contextWindow: number; inputModalities: string[] }> = {
   "gemini-3.8-flash": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
   [GEMINI_ARGON]: { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
+  [GEMINI_CARBON]: { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
   [CLAUDE_OPUS_55]: { contextWindow: 1_000_000, inputModalities: ["text", "image"] },
   [CLAUDE_SONNET_55]: { contextWindow: 1_000_000, inputModalities: ["text", "image"] },
   "gemini-3.7-flash": { contextWindow: 1_048_576, inputModalities: ["text", "image"] },
@@ -99,6 +106,11 @@ const EFFORT_WIRE_MAP: Record<string, Record<string, string>> = {
     medium: "gemini-4-argon-medium",
     high: "gemini-4-argon-high",
   },
+  [GEMINI_CARBON]: {
+    low: "gemini-4-carbon-low",
+    medium: "gemini-4-carbon-medium",
+    high: "gemini-4-carbon-high",
+  },
   [CLAUDE_OPUS_55]: {
     low: "claude-opus-5-5-low",
     medium: "claude-opus-5-5-medium",
@@ -119,6 +131,7 @@ const EFFORT_WIRE_MAP: Record<string, Record<string, string>> = {
  */
 const SUFFIX_TIER_MODELS = new Set([
   GEMINI_ARGON,
+  GEMINI_CARBON,
   "gemini-3.8-flash",
   CLAUDE_OPUS_55,
   CLAUDE_SONNET_55,
@@ -132,7 +145,8 @@ const SUFFIX_TIER_MODELS = new Set([
  * alone answers 200 with `thoughtsTokenCount` in the thousands and zero thought parts — the whole
  * plan arrives as ordinary visible text. Sending `{thinkingLevel: "high", includeThoughts: true}`
  * on the same wire id returns the thought parts. `gemini-3.8-flash-high` does not behave this way:
- * its include-only request still returns thoughts, so it stays out of this set.
+ * its include-only request still returns thoughts, so it stays out of this set. Gemini 4 Carbon
+ * also stays out: only Argon withholds thought parts without `thinkingLevel`.
  */
 const THOUGHT_LEVEL_REQUIRED_SUFFIX_MODELS = new Set([GEMINI_ARGON]);
 
@@ -164,6 +178,7 @@ function suffixThoughtWire(
 const DEFAULT_EFFORT: Record<string, string> = {
   "gemini-3.8-flash": "medium",
   [GEMINI_ARGON]: "medium",
+  [GEMINI_CARBON]: "medium",
   [CLAUDE_OPUS_55]: "medium",
   [CLAUDE_SONNET_55]: "medium",
   "gemini-3.1-pro": "high",

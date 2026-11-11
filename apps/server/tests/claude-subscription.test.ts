@@ -17,6 +17,7 @@ import {
   TOKEN_URL,
   UTILITY_BETAS,
 } from "../src/providers/claude-subscription/constants.ts";
+import { cliVersion } from "../src/providers/claude-subscription/identity.ts";
 import { createClaudeSubscriptionOAuth } from "../src/providers/claude-subscription/oauth.ts";
 import {
   modelScope,
@@ -58,7 +59,7 @@ afterEach(async () => {
 });
 
 /** A real HTTP server standing in for api.anthropic.com: Messages, models and usage, all Bearer-authenticated. */
-async function startClaude() {
+async function startClaude(onMessage?: (headers: Headers) => Response | Promise<Response>) {
   const validTokens = new Set<string>();
   const seen: Seen[] = [];
   const replies: Response[] = [];
@@ -77,9 +78,10 @@ async function startClaude() {
     if (!validTokens.has(token)) return c.json({ type: "error", error: {} }, 401);
     return next();
   });
-  app.post(
-    "/v1/messages",
-    () => replies.shift() ?? anthropicMessage([{ type: "text", text: "hi" }]),
+  app.post("/v1/messages", (c) =>
+    onMessage
+      ? onMessage(c.req.raw.headers)
+      : (replies.shift() ?? anthropicMessage([{ type: "text", text: "hi" }])),
   );
   app.get("/v1/models", (c) =>
     c.json({
@@ -140,8 +142,8 @@ function fakeTokenEndpoint(validTokens: Set<string>) {
 }
 
 /** A router with one `claude-subscription` provider ("sub") pointed at the fake, signed in. */
-async function setup() {
-  const claude = await startClaude();
+async function setup(onMessage?: (headers: Headers) => Response | Promise<Response>) {
+  const claude = await startClaude(onMessage);
   const token = fakeTokenEndpoint(claude.validTokens);
   let h: Harness | undefined;
   const adapter = createClaudeSubscriptionAdapter({
@@ -481,6 +483,45 @@ describe("requests", () => {
     expect((await chat(s, {})).status).toBe(400);
     expect(s.claude.messages()).toHaveLength(3);
   });
+
+  it("retries every concurrent request rejected as too old, not just the first", async () => {
+    // Adoption is process-wide: the judgement uses the version each failed request sent, so a second
+    // request that sent the same stale version still retries (oh-my-pi 18.18.8).
+    const pinned = cliVersion();
+    const required = "100.0.0";
+    const pinnedAgent = `claude-cli/${pinned} (external, cli)`;
+    const requiredAgent = `claude-cli/${required} (external, cli)`;
+    const agents: string[] = [];
+    let firstAttempts = 0;
+    let release!: () => void;
+    const bothFirstAttemptsSent = new Promise<void>((resolve) => (release = resolve));
+    const s = await setup((headers) => {
+      const agent = headers.get("user-agent") ?? "";
+      agents.push(agent);
+      if (agent !== pinnedAgent) return anthropicMessage([{ type: "text", text: "hi" }]);
+      firstAttempts++;
+      if (firstAttempts === 2) release();
+      // Hold every first rejection until both requests have sent theirs, so they race on adoption.
+      return bothFirstAttemptsSent.then(() =>
+        Response.json(
+          {
+            type: "error",
+            error: {
+              type: "invalid_request_error",
+              message: `claude_code_version_too_old: Claude Code version ${required} or newer is required`,
+            },
+          },
+          { status: 400 },
+        ),
+      );
+    });
+    await s.login();
+
+    const results = await Promise.all([chat(s, {}), chat(s, {})]);
+
+    expect(results.map((res) => res.status)).toEqual([200, 200]);
+    expect(agents).toEqual([pinnedAgent, pinnedAgent, requiredAgent, requiredAgent]);
+  });
 });
 
 describe("token lifecycle", () => {
@@ -686,6 +727,24 @@ describe("parseUsage", () => {
     expect(parseUsage({ five_hour: null, seven_day: null })).toBeNull();
     expect(parseUsage("nope")).toBeNull();
   });
+
+  it("counts a shared window the payload declares inactive as accounted for", () => {
+    // While an account has no running 5-hour window Anthropic answers `five_hour: null` with no
+    // `session` row: that window cannot be what blocks the account (oh-my-pi 18.18.8).
+    const noSession = {
+      five_hour: null,
+      seven_day: { utilization: 55, resets_at: null },
+      limits: [{ kind: "weekly_all", percent: 55, resets_at: null }],
+    };
+    expect(parseUsage(noSession)).toMatchObject({ complete: true, exhausted: false });
+
+    // A missing bucket field proves nothing...
+    const { five_hour: _omitted, ...missingField } = noSession;
+    expect(parseUsage(missingField)).toMatchObject({ complete: false });
+    // ...and neither does a payload that never lists `limits`.
+    const { limits: _limits, ...noLimits } = noSession;
+    expect(parseUsage(noLimits)).toMatchObject({ complete: false });
+  });
 });
 
 describe("account identity", () => {
@@ -872,6 +931,46 @@ describe("model scopes and rate-limit headers", () => {
     s.claude.replies.push(limited());
     expect((await chat(s, opus)).status).toBe(502);
     expect((await chat(s, {})).status).toBe(503); // the whole account is cooling down
+  });
+
+  it("heals a scope's 429 cooldown from a reading that declares the 5-hour gate inactive", async () => {
+    const s = await setup();
+    await s.login();
+    const fable = { model: "sub/claude-fable-1" };
+    // The reading the 429's own probe picks up: usage-shaped, but no 5-hour window and no Fable row.
+    s.claude.usage.push(Response.json({ seven_day: { utilization: 20, resets_at: null } }));
+    s.claude.replies.push(
+      Response.json({ type: "error", error: { type: "rate_limit_error" } }, { status: 429 }),
+    );
+    expect((await chat(s, fable)).status).toBe(502);
+    expect((await chat(s, fable)).status).toBe(503); // the scope is cooling down
+    const [cred] = (await s.h.admin("GET", "/providers/sub/credentials")).json.data;
+
+    // Let the probe the 429 kicked off settle before queuing the reading it should carry.
+    await s.h.services.quota.get(cred.id);
+    // An account with no running 5-hour window: `five_hour: null` and no `session` row in `limits[]`.
+    // That gate is accounted for, so the reading is complete and can lift the scope's cooldown.
+    s.claude.usage.push(
+      Response.json({
+        five_hour: null,
+        seven_day: { utilization: 20, resets_at: null },
+        limits: [
+          { kind: "weekly_all", percent: 20, resets_at: null },
+          {
+            kind: "weekly_scoped",
+            percent: 81,
+            resets_at: null,
+            scope: { model: { display_name: "Fable" } },
+          },
+        ],
+      }),
+    );
+    expect(await s.h.services.quota.get(cred.id, { maxAgeMs: 0 })).toMatchObject({
+      ok: true,
+      quota: { complete: true },
+    });
+    expect((await chat(s, fable)).status).toBe(200);
+    expect(s.claude.messages()).toHaveLength(2);
   });
 
   it("parks a family whose weekly window is spent, but not the account", async () => {
