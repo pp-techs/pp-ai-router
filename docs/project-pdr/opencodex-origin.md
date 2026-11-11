@@ -18,7 +18,7 @@ Per its own README: a "universal provider proxy for OpenAI Codex & Claude Code".
 
 pp-ai-router is **not** a fork: the router, governance, pool, pricing, admin API and admin UI are original. Only the per-provider protocol translation was ported.
 
-**Last synced with upstream**: v2.100.0 (`0d691be83`, 2026-11-10) for the `anthropic`, `claude-subscription`, `antigravity`, `chatgpt-subscription` and `kiro` adapters; oh-my-pi compared at `9058ab9d2` (18.18.6), 2026-11-10. Use this commit as the base for the next `git diff`.
+**Last synced with upstream**: v2.100.0-61 (`aaca968d7`, 2026-11-11) for the `anthropic`, `claude-subscription`, `antigravity`, `chatgpt-subscription` and `kiro` adapters; oh-my-pi compared at `679691a781` (18.18.8), 2026-11-11. Use this commit as the base for the next `git diff`.
 
 **OAuth flows re-verified** (2026-11-10) at opencodex v2.100.0 (`0d691be83`) and oh-my-pi `9058ab9d2` (18.18.6): login/refresh code, client ids, scopes, endpoints, redirects, PKCE/state, token bodies, expiry skew and refresh-failure classification were compared again for the four OAuth providers (Claude subscription, ChatGPT subscription, Antigravity, Kiro). No drift: the client ids, scopes, redirects, refresh bodies and terminal-error lists still match. opencodex's OAuth commits after the previous review are local credential-store locking, account-affinity batching and Messages-front-end error normalization, and oh-my-pi's are provider pausing and pool health — none of which this gateway ports.
 

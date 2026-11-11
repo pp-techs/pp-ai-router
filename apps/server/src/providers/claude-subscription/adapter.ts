@@ -2,7 +2,7 @@
 import type { ProviderAdapter } from "../adapter.ts";
 import { createAnthropicAdapter } from "../anthropic.ts";
 import { DEFAULT_BASE_URL } from "./constants.ts";
-import { adoptRequiredVersion } from "./identity.ts";
+import { adoptRequiredVersion, cliVersion } from "./identity.ts";
 import { createClaudeSubscriptionOAuth, type OAuthDeps } from "./oauth.ts";
 import { fetchAnthropicQuota, modelScope, parseRateLimitHeaders } from "./quota.ts";
 import { prepareSubscriptionRequest, restoreToolNames, subscriptionHeaders } from "./wire.ts";
@@ -28,7 +28,7 @@ export function createClaudeSubscriptionAdapter(deps: OAuthDeps = {}): ProviderA
     headers: subscriptionHeaders,
     messagesQuery: "beta=true",
     prepare: prepareSubscriptionRequest,
-    retryRejection: adoptRequiredVersion,
+    retryRejection: { requestVersion: cliVersion, accept: adoptRequiredVersion },
     restore: restoreToolNames,
   });
 }

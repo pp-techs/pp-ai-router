@@ -33,8 +33,9 @@ export interface Quota {
   /** When the allowance rolls over, if the upstream says. */
   resetsAt: number | null;
   /**
-   * Every window that gates the whole account was reported. Only a complete reading may lift a
-   * scope's cooldown early: a reading without a shared window cannot say why a 429 happened.
+   * Every window that gates the whole account was reported, or positively declared inactive by the
+   * payload (a `null` bucket with no `limits` row of that kind). Only a complete reading may lift a
+   * scope's cooldown early: a reading without a shared window otherwise cannot say why a 429 happened.
    */
   complete?: boolean;
 }

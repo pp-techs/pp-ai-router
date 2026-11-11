@@ -50,17 +50,24 @@ export const USER_AGENT =
   `antigravity/ide/${IDE_VERSION} (os_type=windows; arch=amd64; aidev_client; auth_method=oauth)`;
 
 /**
- * Antigravity CLI User-Agent. Cloud Code Assist serves Gemini 4 Argon only to the CLI client family
- * and 404s the other agent models under it, so it is chosen per wire model
- * (`userAgentForWireModel`). The quota summary is asked with it too: its Argon group is CLI-only.
+ * Antigravity CLI User-Agent. Cloud Code Assist serves the Gemini 4 codename models (Argon,
+ * Carbon) only to the CLI client family and 404s the other agent models (`gemini-3.7-flash-tiered`,
+ * `gemini-3.1-pro-low`) under it, so it is chosen per wire model (`userAgentForWireModel`). The
+ * quota summary is asked with it too: its Argon group is CLI-only.
  * `GOOGLE_ANTIGRAVITY_USER_AGENT` never applies to it: letting it replace this header would lock
- * Argon again.
+ * the Gemini 4 models again.
  */
 export const CLI_USER_AGENT =
   "antigravity/cli/1.3.4 (os_type=darwin; arch=arm64; aidev_client; auth_method=oauth)";
 
-/** Wire ids served only to the CLI client family. */
-const CLI_ONLY_WIRE_MODEL = /^gemini-4-argon(?:-(?:low|medium|high))?$/;
+/**
+ * Wire ids served only to the CLI client family: every Gemini 4 codename, bare or with a tier
+ * suffix. Argon was verified 2026-10-14; on 2026-11-11 `gemini-4-carbon-medium` 404'd under the
+ * IDE User-Agent ("Requested entity was not found") while answering 200 under the CLI one, the
+ * same split as Argon. Matching the generation keeps a newly discovered codename callable instead
+ * of listing it and 404ing every request.
+ */
+const CLI_ONLY_WIRE_MODEL = /^gemini-4-[a-z][a-z0-9]*(?:-(?:low|medium|high))?$/;
 
 /** The User-Agent an inference request for `wireModelId` must carry. */
 export function userAgentForWireModel(wireModelId: string): string {

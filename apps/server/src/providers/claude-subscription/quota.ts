@@ -24,6 +24,16 @@ const FAMILIES = ["Fable", "Mythos", "Opus", "Sonnet"] as const;
 /** Families whose weekly cap is their own: a 429 for them says nothing about the rest of the account. */
 const LOCAL_FAMILIES: readonly string[] = ["fable", "mythos"];
 
+/**
+ * The windows that gate every Claude request, whatever the model, with the legacy bucket field and the
+ * `limits[]` kind that report each one (oh-my-pi's `CLAUDE_SHARED_GATES`).
+ */
+const SHARED_GATES = {
+  "5h": { field: "five_hour", kind: "session" },
+  Weekly: { field: "seven_day", kind: "weekly_all" },
+} as const;
+const SHARED_GATE_LABELS = Object.keys(SHARED_GATES) as (keyof typeof SHARED_GATES)[];
+
 /** The scope of a model id: its family, when it is one of those with a weekly allowance of its own. */
 export function modelScope(model: string): ModelScope | undefined {
   const id = model.toLowerCase();
@@ -84,6 +94,30 @@ function sharedExhaustion(shared: QuotaWindow[]): Pick<Quota, "exhausted" | "res
 }
 
 /**
+ * Shared windows the payload positively declares inactive: the legacy field is present and `null`, and
+ * `limits[]` carries no row of that kind. While an account has no running 5-hour window Anthropic
+ * answers `five_hour: null` with no `session` row, so that window cannot be what blocks the account.
+ * A missing field, or a payload without `limits[]`, still proves nothing (oh-my-pi `5bdac7ef23`).
+ */
+function inactiveSharedWindows(usage: Record<string, unknown>): Set<string> {
+  const limits = usage.limits;
+  if (!Array.isArray(limits)) return new Set();
+  return new Set(
+    SHARED_GATE_LABELS.filter((label) => {
+      const { field, kind } = SHARED_GATES[label];
+      return (
+        Object.hasOwn(usage, field) &&
+        usage[field] === null &&
+        !limits.some((entry) => {
+          const limit = asRecord(entry);
+          return typeof limit?.kind === "string" && limit.kind.trim().toLowerCase() === kind;
+        })
+      );
+    }),
+  );
+}
+
+/**
  * `GET /api/oauth/usage`: a 5-hour and a weekly allowance for the whole account, plus weekly ones for
  * single model families (scoped: a spent one stops that family only, never the account).
  */
@@ -122,13 +156,17 @@ export function parseUsage(body: unknown): Quota | null {
 
   const windows = [...shared, ...scoped.values()];
   if (windows.length === 0) return null;
+  const inactive = inactiveSharedWindows(usage);
 
   return {
     windows,
     credits: null,
     ...sharedExhaustion(shared),
-    // Only a reading of both shared windows can vouch that a spent family is not a shared wall.
-    complete: shared.length === 2,
+    // Only a reading of every shared window — reported, or declared inactive by the live payload —
+    // can vouch that a spent family is not a shared wall (oh-my-pi 18.18.8).
+    complete: SHARED_GATE_LABELS.every(
+      (label) => shared.some((w) => w.label === label) || inactive.has(label),
+    ),
   };
 }
 

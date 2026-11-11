@@ -49,6 +49,23 @@ export interface PreparedRequest {
   headers?: Record<string, string>;
 }
 
+/**
+ * Resending a request once the protocol version it presented has been fixed, e.g. Anthropic answering
+ * `claude_code_version_too_old`: the flavor adopts the required version for the rest of the process.
+ */
+export interface VersionRetry {
+  /**
+   * The protocol version the next attempt presents on the wire, read right before its body and
+   * headers are built. `accept` judges a rejection against the version the failed request actually
+   * sent, not the process-wide adopted one: of several concurrent stale-version requests, adoption
+   * moves the shared version up on the first answer, and comparing against it would let all the
+   * others skip their retry (oh-my-pi `b328cf183f`, 18.18.8).
+   */
+  requestVersion: () => string;
+  /** Whether this 4xx answer names something the flavor has since fixed, so the request is worth one resend. */
+  accept: (rejection: string, sentVersion: string) => boolean;
+}
+
 /** What distinguishes one way of reaching the Messages API from another. */
 export interface AnthropicFlavor extends Pick<
   ProviderAdapter,
@@ -68,8 +85,8 @@ export interface AnthropicFlavor extends Pick<
     payload: Record<string, unknown>,
     account: { token: string; meta: Readonly<Record<string, string>> },
   ) => PreparedRequest;
-  /** Whether a 4xx answer names something the flavor has since fixed, so the request is worth one resend. */
-  retryRejection?: (rejection: string) => boolean;
+  /** One resend allowed when a 4xx names a protocol version the flavor has since fixed. */
+  retryRejection?: VersionRetry;
   /** What the headers of an answer (a refusal too) say about the account's allowance, if anything. */
   readAllowance?: (headers: Headers) => Quota | null;
   /** Rewrites every chunk translated from the answer, in place, before the client sees it. */
@@ -143,11 +160,14 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
 
       const url = new URL(`${baseUrl.replace(/\/+$/, "")}/messages`);
       if (flavor.messagesQuery) url.search = flavor.messagesQuery;
-      const send = () => {
+      const send = async () => {
+        // Read before the body and headers are built, so a rejection is judged against the version
+        // this attempt sent rather than the one the process has since adopted (oh-my-pi 18.18.8).
+        const sentVersion = flavor.retryRejection?.requestVersion() ?? "";
         const prepared = flavor.prepare?.(payload, { token, meta }) ?? {
           body: JSON.stringify(payload),
         };
-        return fetch(url, {
+        const answer = await fetch(url, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -160,22 +180,21 @@ export function createAnthropicAdapter(flavor: AnthropicFlavor): ProviderAdapter
           body: prepared.body,
           signal,
         });
-      };
-      const sendObserved = async () => {
-        const answer = await send();
         const allowance = observe && flavor.readAllowance?.(answer.headers);
         if (allowance) observe(allowance);
-        return answer;
+        return { answer, sentVersion };
       };
-      let res = await sendObserved();
+      const first = await send();
+      let res = first.answer;
       if (
         flavor.retryRejection &&
         res.status >= 400 &&
         res.status < 500 &&
-        flavor.retryRejection(await res.clone().text())
+        flavor.retryRejection.accept(await res.clone().text(), first.sentVersion)
       ) {
         await res.body?.cancel().catch(() => {});
-        res = await sendObserved();
+        // `send` re-runs `prepare`, so the rebuilt body and headers carry the adopted version.
+        res = (await send()).answer;
       }
       if (!res.ok) return res;
 

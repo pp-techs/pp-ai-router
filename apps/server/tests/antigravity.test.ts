@@ -493,7 +493,7 @@ describe("model mapping", () => {
     expect(resolveWireModel("some-new-model")).toEqual({ wireModelId: "some-new-model" });
   });
 
-  it("resolves Gemini 4 Argon and Claude 5.5 to per-tier suffix wire ids", () => {
+  it("resolves Gemini 4 Argon/Carbon and Claude 5.5 to per-tier suffix wire ids", () => {
     expect(resolveWireModel("gemini-4-argon")).toEqual({ wireModelId: "gemini-4-argon-medium" });
     expect(resolveWireModel("gemini-4-argon", "xhigh")).toEqual({
       wireModelId: "gemini-4-argon-high",
@@ -511,6 +511,17 @@ describe("model mapping", () => {
     expect(resolveWireModel("gemini-4-argon-low", undefined, { includeThoughts: true })).toEqual({
       wireModelId: "gemini-4-argon-low",
       thinkingLevel: "low",
+    });
+    // Carbon shares Argon's suffix ladder but not its thought-level quirk: the suffix alone is enough.
+    expect(resolveWireModel("gemini-4-carbon")).toEqual({ wireModelId: "gemini-4-carbon-medium" });
+    expect(resolveWireModel("gemini-4-carbon", "low")).toEqual({
+      wireModelId: "gemini-4-carbon-low",
+    });
+    expect(resolveWireModel("gemini-4-carbon", "high", { includeThoughts: true })).toEqual({
+      wireModelId: "gemini-4-carbon-high",
+    });
+    expect(resolveWireModel("gemini-4-carbon-low", undefined, { includeThoughts: true })).toEqual({
+      wireModelId: "gemini-4-carbon-low",
     });
     expect(resolveWireModel("gemini-3.8-flash", "low", { includeThoughts: true })).toEqual({
       wireModelId: "gemini-3.8-flash-low",
@@ -532,23 +543,38 @@ describe("model mapping", () => {
       contextWindow: 1_048_576,
       inputModalities: ["text", "image"],
     });
+    expect(byId.get("gemini-4-carbon")).toMatchObject({
+      contextWindow: 1_048_576,
+      inputModalities: ["text", "image"],
+      maxOutputTokens: 65536,
+    });
     expect(byId.get("claude-opus-5-5")).toMatchObject({ contextWindow: 1_000_000 });
     expect(byId.get("claude-sonnet-4-6")).toBeDefined();
   });
 
-  it("uses the CLI User-Agent only for Argon wire ids", () => {
+  it("uses the CLI User-Agent only for Gemini 4 codename wire ids", () => {
     expect(CLI_USER_AGENT).toBe(
       "antigravity/cli/1.3.4 (os_type=darwin; arch=arm64; aidev_client; auth_method=oauth)",
     );
-    for (const id of [
-      "gemini-4-argon",
-      "gemini-4-argon-low",
-      "gemini-4-argon-medium",
-      "gemini-4-argon-high",
-    ]) {
-      expect(userAgentForWireModel(id)).toBe(CLI_USER_AGENT);
+    // Verified 2026-10-14 for Argon and 2026-11-11 for Carbon against live CCA: both codenames take
+    // the CLI User-Agent, bare or tiered, while other agent models 404 under it.
+    for (const codename of ["argon", "carbon"]) {
+      for (const suffix of ["", "-low", "-medium", "-high"]) {
+        expect(userAgentForWireModel(`gemini-4-${codename}${suffix}`)).toBe(CLI_USER_AGENT);
+      }
     }
-    for (const id of ["gemini-4-argon-extra", "gemini-3.8-flash-medium", "claude-opus-5-5-high"]) {
+    for (const id of [
+      // Near misses must not widen the CLI gate.
+      "gemini-4-argon-extra",
+      "gemini-4-carbon-max",
+      "gemini-4",
+      "gemini-4-",
+      "gemini-4.1-pro-high",
+      "gemini-40-argon-high",
+      "x-gemini-4-carbon-high",
+      "gemini-3.8-flash-medium",
+      "claude-opus-5-5-high",
+    ]) {
       expect(userAgentForWireModel(id)).toBe(USER_AGENT);
     }
     const mk = (model: string) =>
@@ -560,6 +586,9 @@ describe("model mapping", () => {
         stream: false,
       }).headers["user-agent"];
     expect(mk("gemini-4-argon-high")).toBe(CLI_USER_AGENT);
+    expect(mk("gemini-4-carbon")).toBe(CLI_USER_AGENT);
+    expect(mk("gemini-4-carbon-medium")).toBe(CLI_USER_AGENT);
+    expect(mk("gemini-4-carbon-low")).toBe(CLI_USER_AGENT);
     expect(mk("claude-sonnet-5-5")).toBe(USER_AGENT);
   });
 
