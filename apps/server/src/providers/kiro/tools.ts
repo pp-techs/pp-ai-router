@@ -28,37 +28,63 @@ const MAX_TOOL_CATALOG_BYTES = 96_000;
  * JSON Schema keywords Kiro's runtime rejects ("ValidationException: Invalid tool use format.").
  * They are advisory to the model, so they are dropped everywhere in the schema tree.
  */
-const REJECTED_SCHEMA_KEYS: Record<string, true> = {
-  additionalProperties: true,
-  pattern: true,
-  format: true,
-  minLength: true,
-  maxLength: true,
-  minimum: true,
-  maximum: true,
-  exclusiveMinimum: true,
-  exclusiveMaximum: true,
-  multipleOf: true,
-  minItems: true,
-  maxItems: true,
-  uniqueItems: true,
-  minProperties: true,
-  maxProperties: true,
-  contentEncoding: true,
-  contentMediaType: true,
-  $schema: true,
-  patternProperties: true,
-  propertyNames: true,
-  dependentSchemas: true,
-  dependentRequired: true,
-  if: true,
-  // `then` is rejected too; see sanitizeKiroSchema (a `then` key in a literal trips no-thenable).
-  else: true,
-  contains: true,
-  unevaluatedProperties: true,
-  unevaluatedItems: true,
-  encrypted: true,
-};
+const REJECTED_SCHEMA_KEYS: ReadonlySet<string> = new Set([
+  "additionalProperties",
+  "pattern",
+  "format",
+  "minLength",
+  "maxLength",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "multipleOf",
+  "minItems",
+  "maxItems",
+  "uniqueItems",
+  "minProperties",
+  "maxProperties",
+  "contentEncoding",
+  "contentMediaType",
+  "$schema",
+  "patternProperties",
+  "propertyNames",
+  "dependentSchemas",
+  "dependentRequired",
+  "if",
+  "then",
+  "else",
+  "contains",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+  "encrypted",
+]);
+
+const NO_SCHEMA_KEYS: ReadonlySet<string> = new Set();
+
+/**
+ * The default rejected set minus `accepted`: the keywords one model id was measured to take. A probe
+ * can only widen what one id accepts, so an exception names the keys that probe covered, never
+ * "everything".
+ */
+function rejectAllExcept(accepted: readonly string[]): ReadonlySet<string> {
+  return new Set([...REJECTED_SCHEMA_KEYS].filter((key) => !accepted.includes(key)));
+}
+
+/**
+ * Per-model exceptions (opencodex #8451 probes): Opus 4.5 took every rejected keyword; the 5.5 Opus and
+ * Sonnet took `pattern` and `maximum`. An id nobody probed keeps the default strip.
+ */
+const SCHEMA_KEY_EXCEPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["claude-opus-4.5", NO_SCHEMA_KEYS],
+  ["claude-opus-5.5", rejectAllExcept(["pattern", "maximum"])],
+  ["claude-sonnet-5.5", rejectAllExcept(["pattern", "maximum"])],
+]);
+
+/** Schema keywords Kiro rejects for `modelId` (a normalized id). */
+export function kiroRejectedSchemaKeys(modelId: string): ReadonlySet<string> {
+  return SCHEMA_KEY_EXCEPTIONS.get(modelId) ?? REJECTED_SCHEMA_KEYS;
+}
 
 /** Keys whose values map a *name* to a schema: names must survive even when they equal a rejected keyword. */
 const SCHEMA_MAP_KEYS: Record<string, true> = { properties: true, $defs: true, definitions: true };
@@ -75,28 +101,37 @@ const SCHEMA_LITERAL_KEYS: Record<string, true> = {
   examples: true,
 };
 
-function sanitizeSchemaMap(value: unknown): unknown {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return sanitizeKiroSchema(value);
+function sanitizeSchemaMap(
+  value: unknown,
+  rejected: ReadonlySet<string> = REJECTED_SCHEMA_KEYS,
+): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return sanitizeKiroSchema(value, rejected);
   // fromEntries defines own properties: a property named "__proto__" stays a property instead of
   // hitting the prototype setter and vanishing from the advertised schema.
   return Object.fromEntries(
-    Object.entries(value).map(([name, child]) => [name, sanitizeKiroSchema(child)]),
+    Object.entries(value).map(([name, child]) => [name, sanitizeKiroSchema(child, rejected)]),
   );
 }
 
 /** Strip the keywords Kiro's tool-spec validator rejects, everywhere in a schema tree. */
-export function sanitizeKiroSchema(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sanitizeKiroSchema);
+export function sanitizeKiroSchema(
+  value: unknown,
+  rejected: ReadonlySet<string> = REJECTED_SCHEMA_KEYS,
+): unknown {
+  if (Array.isArray(value)) return value.map((child) => sanitizeKiroSchema(child, rejected));
   if (!value || typeof value !== "object") return value;
   const out: Array<[string, unknown]> = [];
   for (const [key, child] of Object.entries(value)) {
-    if (key === "then" || Object.hasOwn(REJECTED_SCHEMA_KEYS, key)) continue;
+    if (rejected.has(key)) continue;
     if (key === "required" && Array.isArray(child) && child.length === 0) continue;
     if (Object.hasOwn(SCHEMA_LITERAL_KEYS, key)) out.push([key, child]);
     else
       out.push([
         key,
-        Object.hasOwn(SCHEMA_MAP_KEYS, key) ? sanitizeSchemaMap(child) : sanitizeKiroSchema(child),
+        Object.hasOwn(SCHEMA_MAP_KEYS, key)
+          ? sanitizeSchemaMap(child, rejected)
+          : sanitizeKiroSchema(child, rejected),
       ]);
   }
   return Object.fromEntries(out);
@@ -109,7 +144,10 @@ const COMPOSITION_KEYS = ["oneOf", "anyOf", "allOf"] as const;
  * composition is flattened into one object schema: allOf merges `required` (conjunction), anyOf/oneOf
  * drop it so a single valid branch still passes.
  */
-function ensureRootObjectType(schema: unknown): Record<string, unknown> {
+function ensureRootObjectType(
+  schema: unknown,
+  rejected: ReadonlySet<string> = REJECTED_SCHEMA_KEYS,
+): Record<string, unknown> {
   const obj =
     schema && typeof schema === "object" && !Array.isArray(schema)
       ? (schema as Record<string, unknown>)
@@ -120,7 +158,7 @@ function ensureRootObjectType(schema: unknown): Record<string, unknown> {
   const props: Record<string, unknown> = {};
   const required = new Set<string>();
   if (obj.properties && typeof obj.properties === "object")
-    Object.assign(props, sanitizeSchemaMap(obj.properties));
+    Object.assign(props, sanitizeSchemaMap(obj.properties, rejected));
   if (Array.isArray(obj.required))
     for (const r of obj.required) if (typeof r === "string") required.add(r);
   for (const key of COMPOSITION_KEYS) {
@@ -130,7 +168,7 @@ function ensureRootObjectType(schema: unknown): Record<string, unknown> {
       if (!variant || typeof variant !== "object" || Array.isArray(variant)) continue;
       const v = variant as Record<string, unknown>;
       if (v.properties && typeof v.properties === "object")
-        Object.assign(props, sanitizeSchemaMap(v.properties));
+        Object.assign(props, sanitizeSchemaMap(v.properties, rejected));
       if (key === "allOf" && Array.isArray(v.required))
         for (const r of v.required) if (typeof r === "string") required.add(r);
     }
@@ -220,13 +258,16 @@ export function convertTools(
   names: ToolNames,
 ): { specs: unknown[]; notice: string | undefined } {
   const limit = modelId === "gpt-5.6-sol" ? MAX_TOOL_DESCRIPTION_LONG : MAX_TOOL_DESCRIPTION;
+  const rejected = kiroRejectedSchemaKeys(modelId);
   const converted = tools.map((tool) => ({
     tool,
     spec: {
       toolSpecification: {
         name: names.alias(tool.name),
         description: truncateDescription(tool.description || `Tool: ${tool.name}`, limit),
-        inputSchema: { json: ensureRootObjectType(sanitizeKiroSchema(tool.parameters ?? {})) },
+        inputSchema: {
+          json: ensureRootObjectType(sanitizeKiroSchema(tool.parameters ?? {}, rejected), rejected),
+        },
       },
     },
   }));

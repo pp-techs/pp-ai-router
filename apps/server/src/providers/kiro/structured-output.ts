@@ -1,5 +1,9 @@
 // Adapted from lidge-jun/opencodex (MIT): src/adapters/kiro/structured-output.ts
-import { KIRO_STRUCTURED_OUTPUT_TOOL_NAME, sanitizeKiroSchema } from "./tools.ts";
+import {
+  KIRO_STRUCTURED_OUTPUT_TOOL_NAME,
+  kiroRejectedSchemaKeys,
+  sanitizeKiroSchema,
+} from "./tools.ts";
 import { readKiroJson } from "./structured-output-json.ts";
 import {
   assertKiroStrictSchemaSupported,
@@ -28,7 +32,7 @@ export interface KiroStructuredOutputSpec {
   schema?: Record<string, unknown>;
   /** True when the caller asked for `strict: true`, so the value must conform to the whole schema. */
   strict?: boolean;
-  /** The tool input schema actually advertised: sanitized, and wrapped when `wrapped` is true. */
+  /** The tool input schema actually advertised: stripped of what this model rejects, and wrapped when `wrapped` is true. */
   toolSchema: Record<string, unknown>;
   /**
    * True when the answer rides the tool input's `value` property instead of BEING the input.
@@ -64,7 +68,10 @@ function isPlainObjectRoot(schema: JsonRecord): boolean {
  * `response_format` is the source: `json_schema` carries the caller's schema, `json_object` asks
  * only for "a JSON object" and is honoured as the weakest form of the contract.
  */
-export function kiroStructuredOutputSpec(body: JsonRecord): KiroStructuredOutputSpec | undefined {
+export function kiroStructuredOutputSpec(
+  body: JsonRecord,
+  modelId = "",
+): KiroStructuredOutputSpec | undefined {
   const format = isRecord(body.response_format) ? body.response_format : undefined;
   const type = format?.type;
   if (type === "json_object") return { toolSchema: { type: "object" }, wrapped: false };
@@ -91,7 +98,7 @@ export function kiroStructuredOutputSpec(body: JsonRecord): KiroStructuredOutput
   if (!schema) return { toolSchema: { type: "object" }, wrapped: false, ...meta };
   if (strict) assertKiroStrictSchemaSupported(schema);
   const contract = { schema, ...(strict ? { strict } : {}) };
-  const sanitized = sanitizeKiroSchema(schema) as JsonRecord;
+  const sanitized = sanitizeKiroSchema(schema, kiroRejectedSchemaKeys(modelId)) as JsonRecord;
   if (isPlainObjectRoot(schema))
     return { ...contract, toolSchema: sanitized, wrapped: false, ...meta };
   // `#/$defs/...` references resolve against the document root, which is now the wrapper. Hoist the
