@@ -61,13 +61,14 @@ export const CLI_USER_AGENT =
   "antigravity/cli/1.3.4 (os_type=darwin; arch=arm64; aidev_client; auth_method=oauth)";
 
 /**
- * Wire ids served only to the CLI client family: every Gemini 4 codename, bare or with a tier
- * suffix. Argon was verified 2026-10-14; on 2026-11-11 `gemini-4-carbon-medium` 404'd under the
- * IDE User-Agent ("Requested entity was not found") while answering 200 under the CLI one, the
- * same split as Argon. Matching the generation keeps a newly discovered codename callable instead
- * of listing it and 404ing every request.
+ * Wire ids sent with the CLI User-Agent: every Gemini 4 codename, bare or with a low, medium, high
+ * or xhigh tier suffix. Argon was verified 2026-10-14; on 2026-11-11 `gemini-4-carbon-medium` 404'd
+ * under the IDE User-Agent ("Requested entity was not found") while answering 200 under the CLI
+ * one, the same split as Argon. Hydrogen's four tiers were listed by CCA discovery on 2026-11-12 and
+ * `gemini-4-hydrogen-xhigh` answered 200 under the CLI one. Matching the generation keeps a newly
+ * discovered codename callable instead of listing it and 404ing every request.
  */
-const CLI_ONLY_WIRE_MODEL = /^gemini-4-[a-z][a-z0-9]*(?:-(?:low|medium|high))?$/;
+const CLI_ONLY_WIRE_MODEL = /^gemini-4-[a-z][a-z0-9]*(?:-(?:low|medium|high|xhigh))?$/;
 
 /** The User-Agent an inference request for `wireModelId` must carry. */
 export function userAgentForWireModel(wireModelId: string): string {

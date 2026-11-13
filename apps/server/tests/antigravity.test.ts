@@ -557,9 +557,10 @@ describe("model mapping", () => {
       "antigravity/cli/1.3.4 (os_type=darwin; arch=arm64; aidev_client; auth_method=oauth)",
     );
     // Verified 2026-10-14 for Argon and 2026-11-11 for Carbon against live CCA: both codenames take
-    // the CLI User-Agent, bare or tiered, while other agent models 404 under it.
-    for (const codename of ["argon", "carbon"]) {
-      for (const suffix of ["", "-low", "-medium", "-high"]) {
+    // the CLI User-Agent, bare or tiered, while other agent models 404 under it. Hydrogen's xhigh
+    // tier (listed by CCA discovery 2026-11-12) answers 200 under it too.
+    for (const codename of ["argon", "carbon", "hydrogen"]) {
+      for (const suffix of ["", "-low", "-medium", "-high", "-xhigh"]) {
         expect(userAgentForWireModel(`gemini-4-${codename}${suffix}`)).toBe(CLI_USER_AGENT);
       }
     }
@@ -567,6 +568,8 @@ describe("model mapping", () => {
       // Near misses must not widen the CLI gate.
       "gemini-4-argon-extra",
       "gemini-4-carbon-max",
+      "gemini-4-hydrogen-xhigh-extra",
+      "gemini-3.8-flash-xhigh",
       "gemini-4",
       "gemini-4-",
       "gemini-4.1-pro-high",
@@ -588,6 +591,7 @@ describe("model mapping", () => {
     expect(mk("gemini-4-argon-high")).toBe(CLI_USER_AGENT);
     expect(mk("gemini-4-carbon")).toBe(CLI_USER_AGENT);
     expect(mk("gemini-4-carbon-medium")).toBe(CLI_USER_AGENT);
+    expect(mk("gemini-4-hydrogen-xhigh")).toBe(CLI_USER_AGENT);
     expect(mk("gemini-4-carbon-low")).toBe(CLI_USER_AGENT);
     expect(mk("claude-sonnet-5-5")).toBe(USER_AGENT);
   });

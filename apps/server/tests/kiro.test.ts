@@ -474,6 +474,89 @@ describe("request building", () => {
     ).toThrow(/does not support reasoning effort/);
   });
 
+  it("sends native effort to the probed Claude ids, keeping xhigh and minimal emulated where Kiro refuses them", () => {
+    const messages = [{ role: "user", content: "solve" }];
+    const content = (r: ReturnType<typeof buildKiroRequest>) =>
+      wire(r.payload).conversationState.currentMessage.userInputMessage.content;
+    for (const model of [
+      "claude-opus-4.8",
+      "claude-opus-4.7",
+      "claude-opus-4.6",
+      "claude-sonnet-5.5",
+      "claude-sonnet-5",
+      "claude-sonnet-4.6",
+      "claude-haiku-5.5",
+    ]) {
+      const r = buildKiroRequest({ model, messages, reasoning_effort: "high" }, CLI);
+      expect(r.payload.additionalModelRequestFields).toEqual({ output_config: { effort: "high" } });
+      expect(content(r)).toBe("solve");
+      // `minimal` keeps the emulated block instead of failing.
+      const minimal = buildKiroRequest({ model, messages, reasoning_effort: "minimal" }, CLI);
+      expect(minimal.payload.additionalModelRequestFields).toBeUndefined();
+      expect(content(minimal)).toContain("<thinking_mode>enabled");
+    }
+    // Opus/Sonnet 4.6 reject a native xhigh (emulated); the others take it natively.
+    for (const model of ["claude-opus-4.6", "claude-sonnet-4.6"]) {
+      const r = buildKiroRequest({ model, messages, reasoning_effort: "xhigh" }, CLI);
+      expect(r.payload.additionalModelRequestFields).toBeUndefined();
+      expect(content(r)).toContain("<thinking_mode>enabled");
+    }
+    expect(
+      buildKiroRequest({ model: "claude-opus-4.8", messages, reasoning_effort: "xhigh" }, CLI)
+        .payload.additionalModelRequestFields,
+    ).toEqual({ output_config: { effort: "xhigh" } });
+    // `ultra` goes out as the native `max`.
+    expect(
+      buildKiroRequest({ model: "claude-opus-5", messages, reasoning_effort: "ultra" }, CLI).payload
+        .additionalModelRequestFields,
+    ).toEqual({ output_config: { effort: "max" } });
+    // Models Kiro rejects the field for stay emulated.
+    for (const model of ["claude-sonnet-4.5", "claude-opus-4.5", "claude-haiku-4.5"]) {
+      const r = buildKiroRequest({ model, messages, reasoning_effort: "high" }, CLI);
+      expect(r.payload.additionalModelRequestFields).toBeUndefined();
+    }
+  });
+
+  it("keeps schema keywords a probe showed a model accepting, and strips them elsewhere", () => {
+    const parameters = {
+      type: "object",
+      properties: {
+        a: { type: "string", pattern: "^a$", minLength: 2 },
+        n: { type: "number", maximum: 5, minimum: 1 },
+      },
+      additionalProperties: false,
+    };
+    const schemaOf = (model: string) => {
+      const { payload } = buildKiroRequest(
+        {
+          model,
+          messages: [{ role: "user", content: "x" }],
+          tools: [{ type: "function", function: { name: "t", parameters } }],
+        },
+        CLI,
+      );
+      const tools = wire(payload).conversationState.currentMessage.userInputMessage
+        .userInputMessageContext!.tools as unknown as {
+        toolSpecification: { inputSchema: { json: Record<string, any> } };
+      }[];
+      return tools[0]!.toolSpecification.inputSchema.json;
+    };
+    // Default: everything rejected is dropped.
+    expect(schemaOf("claude-sonnet-4.5")).toEqual({
+      type: "object",
+      properties: { a: { type: "string" }, n: { type: "number" } },
+    });
+    // Opus 4.5 took every keyword.
+    expect(schemaOf("claude-opus-4.5")).toEqual(parameters);
+    // 5.5 models took only `pattern` and `maximum`.
+    for (const model of ["claude-opus-5.5", "claude-sonnet-5.5"]) {
+      expect(schemaOf(model)).toEqual({
+        type: "object",
+        properties: { a: { type: "string", pattern: "^a$" }, n: { type: "number", maximum: 5 } },
+      });
+    }
+  });
+
   it("never lets a tool's name collide, and caps the catalog it advertises", () => {
     const tool = (name: string) => ({ type: "function", function: { name, parameters: {} } });
     const { payload, nameMap } = buildKiroRequest(
@@ -659,6 +742,36 @@ describe("request building", () => {
         CLI,
       ),
     ).toThrow(/cannot be enforced/);
+  });
+
+  it("advertises the structured-output schema with the per-model keyword exceptions", () => {
+    const schema = {
+      type: "object",
+      properties: { a: { type: "string", pattern: "^a$", minLength: 1 } },
+    };
+    const advertised = (model: string) => {
+      const { payload } = buildKiroRequest(
+        {
+          model,
+          messages: [{ role: "user", content: "x" }],
+          response_format: { type: "json_schema", json_schema: { schema } },
+        },
+        CLI,
+      );
+      const tools = wire(payload).conversationState.currentMessage.userInputMessage
+        .userInputMessageContext!.tools as unknown as {
+        toolSpecification: { inputSchema: { json: unknown } };
+      }[];
+      return tools.at(-1)!.toolSpecification.inputSchema.json;
+    };
+    expect(advertised("claude-sonnet-4.5")).toEqual({
+      type: "object",
+      properties: { a: { type: "string" } },
+    });
+    expect(advertised("claude-sonnet-5.5")).toEqual({
+      type: "object",
+      properties: { a: { type: "string", pattern: "^a$" } },
+    });
   });
 
   it("refuses what the wire cannot express with a request error", () => {

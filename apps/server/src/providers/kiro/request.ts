@@ -1,6 +1,7 @@
 // Adapted from lidge-jun/opencodex (MIT)
 import { randomUUID } from "node:crypto";
 import {
+  emulatesMinimalEffort,
   injectThinkingTags,
   nativeEffortField,
   NATIVE_EFFORTS,
@@ -311,7 +312,7 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
   // caller's format; a schema this emulation cannot enforce is refused before sending.
   let structured: KiroStructuredOutputSpec | undefined;
   try {
-    structured = kiroStructuredOutputSpec(body);
+    structured = kiroStructuredOutputSpec(body, modelId);
   } catch (error) {
     throw new KiroRequestError((error as Error).message);
   }
@@ -549,12 +550,14 @@ export function buildKiroRequest(body: Rec, identity: RequestIdentity): BuiltKir
     },
   };
   if (nativeEffortField(modelId) && effort && effort !== "none") {
-    if (!NATIVE_EFFORTS.includes(effort))
+    // `ultra` is the top of the shared ladder; Kiro's native field calls that rung `max`.
+    const wireEffort = effort === "ultra" ? "max" : effort;
+    if (!NATIVE_EFFORTS.includes(wireEffort) && !emulatesMinimalEffort(modelId, wireEffort))
       throw new KiroRequestError(
         `Kiro ${modelId} does not support reasoning effort ${JSON.stringify(effort)}`,
       );
-    const field = nativeEffortField(modelId, effort);
-    if (field) payload.additionalModelRequestFields = { [field]: { effort } };
+    const field = nativeEffortField(modelId, wireEffort);
+    if (field) payload.additionalModelRequestFields = { [field]: { effort: wireEffort } };
   }
   if (identity.profileArn) payload.profileArn = identity.profileArn;
   return {
