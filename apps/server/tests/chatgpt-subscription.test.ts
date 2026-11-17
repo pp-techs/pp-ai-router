@@ -880,7 +880,7 @@ describe("adapter", () => {
       "x-client-request-id": "conv-1",
       "x-codex-routing-hint": "model=gpt-5.6-sol",
     });
-    expect(USER_AGENT).toBe("omp/18.20.0");
+    expect(USER_AGENT).toBe("omp/18.20.2");
     // codex-rs (and omp since 18.17) sends `OpenAI-Beta` only on the WebSocket handshake: HTTP carries none.
     expect(sent.headers["openai-beta"]).toBeUndefined();
     expect(sent.headers["thread-id"]).toMatch(UUID);
