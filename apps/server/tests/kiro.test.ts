@@ -548,13 +548,22 @@ describe("request building", () => {
     });
     // Opus 4.5 took every keyword.
     expect(schemaOf("claude-opus-4.5")).toEqual(parameters);
-    // 5.5 models took only `pattern` and `maximum`.
-    for (const model of ["claude-opus-5.5", "claude-sonnet-5.5"]) {
-      expect(schemaOf(model)).toEqual({
-        type: "object",
-        properties: { a: { type: "string", pattern: "^a$" }, n: { type: "number", maximum: 5 } },
-      });
-    }
+    // Sonnet 5.5 took only `pattern` and `maximum`.
+    expect(schemaOf("claude-sonnet-5.5")).toEqual({
+      type: "object",
+      properties: { a: { type: "string", pattern: "^a$" }, n: { type: "number", maximum: 5 } },
+    });
+    // Opus 5.5 keeps the twelve keywords production traffic carried, and still strips the rest.
+    expect(schemaOf("claude-opus-5.5")).toEqual({
+      type: "object",
+      properties: {
+        a: { type: "string", pattern: "^a$", minLength: 2 },
+        n: { type: "number", maximum: 5, minimum: 1 },
+      },
+      additionalProperties: false,
+    });
+    parameters.properties.n = { type: "number", multipleOf: 2 } as never;
+    expect(schemaOf("claude-opus-5.5").properties.n).toEqual({ type: "number" });
   });
 
   it("never lets a tool's name collide, and caps the catalog it advertises", () => {

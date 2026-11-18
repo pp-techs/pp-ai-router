@@ -18,10 +18,48 @@ type Json = Record<string, unknown>;
 export class CodexRequestError extends Error {}
 
 /**
- * The backend refuses a request without `instructions`. omp always has a system prompt; a chat-completions
- * client may not, so this stands in then.
+ * The base instructions text: the first system prompt. omp always has one, a chat-completions client may
+ * not, so this stands in then (omp drops empty instructions; what the backend does with none is unobserved).
+ * It travels as the leading developer message of the input ({@link baseInstructionsItem}), not as a
+ * top-level `instructions` field.
  */
 const DEFAULT_INSTRUCTIONS = "You are a helpful assistant.";
+
+/** Content-item kind codex-rs tags its base-instructions developer message with. */
+const BASE_INSTRUCTIONS_KIND = "model.base_instructions";
+
+/** UUID namespace OID (RFC 4122): what omp's `Bun.randomUUIDv5(name, "oid")` resolves to. */
+const UUID_NAMESPACE_OID = "6ba7b812-9dad-11d1-80b4-00c04fd430c8";
+
+/** RFC 4122 version-5 UUID (SHA-1 of the namespace bytes then the name), as `Bun.randomUUIDv5`. */
+function uuidV5(name: string, namespace: string): string {
+  const hash = createHash("sha1")
+    .update(Buffer.from(namespace.replace(/-/g, ""), "hex"))
+    .update(name, "utf8")
+    .digest();
+  hash[6] = (hash[6]! & 0x0f) | 0x50;
+  hash[8] = (hash[8]! & 0x3f) | 0x80;
+  const hex = hash.subarray(0, 16).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * The base instructions as a leading developer message, as codex-rs has sent them since 0.162
+ * (openai/codex#51156) in place of a top-level `instructions` (omp `moveCodexInstructionsToInput`): tagged
+ * `model.base_instructions`, with id `msg_<uuidv5(uuidv5(OID, thread), text)>`. The thread is the prompt
+ * cache key, so the id is stable across retries and resumed sessions; without a key the id is omitted.
+ */
+function baseInstructionsItem(text: string, promptCacheKey: string | undefined): Json {
+  return {
+    ...(promptCacheKey
+      ? { id: `msg_${uuidV5(text, uuidV5(promptCacheKey, UUID_NAMESPACE_OID))}` }
+      : {}),
+    type: "message",
+    role: "developer",
+    content: [{ type: "input_text", text }],
+    internal_chat_message_metadata_passthrough: { content_item_kinds: [BASE_INSTRUCTIONS_KIND] },
+  };
+}
 
 /** Placeholder output for a tool call whose result never landed in the input (omp `CODEX_INTERRUPTED_TOOL_OUTPUT`). */
 const INTERRUPTED_TOOL_OUTPUT =
@@ -342,12 +380,16 @@ export function toCodexRequest(body: Json): Json {
 
   const model = String(body.model);
   const promptCacheKey = normalizePromptCacheKey(body.prompt_cache_key);
+  // Routing fields (`model`, `stream`) lead, as codex-rs serializes them ahead of `input` since 0.161
+  // (omp `withCodexRoutingFieldsFirst`); `client_metadata` is appended by the adapter.
   const out: Json = {
     model,
-    input,
     stream: true,
+    input: [
+      baseInstructionsItem(systemPrompts[0] ?? DEFAULT_INSTRUCTIONS, promptCacheKey),
+      ...input,
+    ],
     ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
-    instructions: systemPrompts[0] ?? DEFAULT_INSTRUCTIONS,
     store: false,
     include: ["reasoning.encrypted_content"],
   };

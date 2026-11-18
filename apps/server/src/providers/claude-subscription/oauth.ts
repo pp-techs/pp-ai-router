@@ -143,6 +143,8 @@ export function createClaudeSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvid
             "user-agent": `claude-code/${cliVersion()}`,
             "anthropic-beta": OAUTH_BETA,
           },
+          // A redirect must never carry the bearer to another host (opencodex bfdb2bc43).
+          redirect: "error",
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         },
       );

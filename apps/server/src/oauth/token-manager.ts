@@ -1,7 +1,7 @@
 import type { Registry, CredentialRuntime } from "../registry.ts";
 import type { Logger } from "../logger.ts";
 import type { ProviderAdapter } from "../providers/adapter.ts";
-import { OAuthRefreshError, type OAuthTokens } from "./types.ts";
+import { OAuthRefreshError, type OAuthTokens, type RefreshReason } from "./types.ts";
 
 export interface ResolvedAuth {
   /** Bearer/API token to present upstream. */
@@ -56,7 +56,13 @@ export class TokenManager {
 
     let tokens = auth.tokens;
     const expiring = tokens.expiresAt !== null && tokens.expiresAt - REFRESH_SKEW_MS <= this.#now();
-    if (force || expiring) tokens = await this.#refresh(credential, providerType, tokens);
+    if (force || expiring)
+      tokens = await this.#refresh(
+        credential,
+        providerType,
+        tokens,
+        force ? "unauthorized" : "expiry",
+      );
     return { token: tokens.accessToken, meta: tokens.extra };
   }
 
@@ -69,6 +75,7 @@ export class TokenManager {
     credential: CredentialRuntime,
     providerType: string,
     current: OAuthTokens,
+    reason: RefreshReason,
   ): Promise<OAuthTokens> {
     const existing = this.#inflight.get(credential.id);
     if (existing) return existing;
@@ -91,7 +98,7 @@ export class TokenManager {
         );
       }
       try {
-        const next = await oauth.refresh(current);
+        const next = await oauth.refresh(current, reason);
         this.#registry.saveTokens(credential.id, next);
         return next;
       } catch (error) {
