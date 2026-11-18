@@ -1,6 +1,6 @@
 // Adapted from can1357/oh-my-pi (MIT): packages/ai registry/oauth/openai-codex.ts and the resolved
 // catalog rule compat/rules/auth/openai-codex.kdl (authorize params, form-encoded token/refresh bodies,
-// 15 s timeout), registry/engine/refresh.ts and error/flags.ts (refresh failure classification).
+// 15 s timeout, `refresh_reason`), registry/engine/refresh.ts and error/flags.ts (refresh failure classification).
 import { randomBytes } from "node:crypto";
 import { generatePkce, parseCallbackInput } from "../../oauth/paste.ts";
 import { OAuthRefreshError, type OAuthProvider, type OAuthTokens } from "../../oauth/types.ts";
@@ -190,7 +190,7 @@ export function createChatgptSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvi
       return tokensFromPayload(payload, null);
     },
 
-    async refresh(tokens) {
+    async refresh(tokens, reason) {
       if (!tokens.refreshToken) {
         throw new OAuthRefreshError("ChatGPT account has no refresh token", true);
       }
@@ -200,6 +200,8 @@ export function createChatgptSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvi
           grant_type: "refresh_token",
           client_id: CLIENT_ID,
           refresh_token: tokens.refreshToken,
+          // codex-rs `RefreshReason` (openai/codex#53991), as omp's `{refresh_reason}` template resolves it.
+          refresh_reason: reason === "unauthorized" ? "unauthorized_recovery" : "proactive_expiry",
         });
       } catch (error) {
         const terminal = error instanceof TokenEndpointError && error.definitive;

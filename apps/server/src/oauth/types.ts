@@ -35,6 +35,9 @@ export type PollResult =
   | { status: "complete"; tokens: OAuthTokens }
   | { status: "error"; message: string };
 
+/** Why a token refresh runs. */
+export type RefreshReason = "expiry" | "unauthorized";
+
 export interface OAuthProvider<State = unknown> {
   /** Shown in the admin UI, e.g. "Sign in with Kiro". */
   readonly label: string;
@@ -43,8 +46,12 @@ export interface OAuthProvider<State = unknown> {
   poll?(state: State): Promise<PollResult>;
   /** Required for `paste` flows. `input` is whatever the user pasted (full redirect URL or bare code). */
   complete?(state: State, input: string): Promise<OAuthTokens>;
-  /** Throws `OAuthRefreshError` (terminal when the account must be re-authorised). */
-  refresh(tokens: OAuthTokens): Promise<OAuthTokens>;
+  /**
+   * Throws `OAuthRefreshError` (terminal when the account must be re-authorised). `reason` says why the
+   * refresh runs (`expiry`: the access token nears its end; `unauthorized`: the upstream answered 401);
+   * providers whose token endpoint takes a diagnostic for it may send it, the others ignore it.
+   */
+  refresh(tokens: OAuthTokens, reason?: RefreshReason): Promise<OAuthTokens>;
 }
 
 export class OAuthRefreshError extends Error {

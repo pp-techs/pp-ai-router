@@ -41,6 +41,25 @@ export function modelScope(model: string): ModelScope | undefined {
   return family ? { name: family, local: LOCAL_FAMILIES.includes(family) } : undefined;
 }
 
+/**
+ * Fable and Mythos are metered by one model-scoped weekly counter, which Anthropic reports as a single
+ * row labelled with whichever of the two the plan meters (live payloads say Fable and no Mythos row
+ * exists; every recorded Mythos 429 returns that row's reset). Like oh-my-pi's `scopedWeeklyGates`, a
+ * row labelled with the requested family gates it, and when there is none every such row does. The
+ * same window is therefore published once per family, labelled and scoped by the family it gates, so
+ * the quota service parks and heals both local scopes from it. Opus and Sonnet stay separate counters.
+ */
+const SHARED_COUNTER_FAMILIES = ["fable", "mythos"] as const;
+
+function sharedCounterWindows(rows: { family: string; window: QuotaWindow }[]): QuotaWindow[] {
+  return SHARED_COUNTER_FAMILIES.flatMap((family) => {
+    const labelled = rows.filter((r) => r.family === family);
+    const gate = (labelled.length > 0 ? labelled : rows)[0];
+    const name = `${family[0]!.toUpperCase()}${family.slice(1)}`;
+    return gate ? [{ ...gate.window, label: `${name} weekly`, scope: family }] : [];
+  });
+}
+
 /** `{ utilization, resets_at }`; a bucket without a utilization is no meter. */
 function bucketWindow(label: string, value: unknown, scope?: string): QuotaWindow | null {
   const bucket = asRecord(value);
@@ -56,7 +75,7 @@ function bucketWindow(label: string, value: unknown, scope?: string): QuotaWindo
 }
 
 /** A `weekly_scoped` entry of `limits`: `{ percent, resets_at, scope: { model: { display_name } } }`. */
-function scopedLimitWindow(value: unknown): QuotaWindow | null {
+function scopedLimitWindow(value: unknown): { family: string; window: QuotaWindow } | null {
   const limit = asRecord(value);
   if (
     !limit ||
@@ -71,10 +90,13 @@ function scopedLimitWindow(value: unknown): QuotaWindow | null {
   const family = FAMILIES.find((f) => name.includes(f.toLowerCase()));
   return used !== undefined && family
     ? {
-        label: `${family} weekly`,
-        usedPercent: used,
-        resetsAt: normalizeResetAt(limit.resets_at),
-        scope: family.toLowerCase(),
+        family: family.toLowerCase(),
+        window: {
+          label: `${family} weekly`,
+          usedPercent: used,
+          resetsAt: normalizeResetAt(limit.resets_at),
+          scope: family.toLowerCase(),
+        },
       }
     : null;
 }
@@ -149,10 +171,14 @@ export function parseUsage(body: unknown): Quota | null {
     );
     if (window) scoped.set(window.label, window);
   }
+  const counter: { family: string; window: QuotaWindow }[] = [];
   for (const raw of limits) {
-    const window = scopedLimitWindow(raw);
-    if (window && !scoped.has(window.label)) scoped.set(window.label, window);
+    const row = scopedLimitWindow(raw);
+    if (!row) continue;
+    if (SHARED_COUNTER_FAMILIES.some((f) => f === row.family)) counter.push(row);
+    else if (!scoped.has(row.window.label)) scoped.set(row.window.label, row.window);
   }
+  for (const window of sharedCounterWindows(counter)) scoped.set(window.label, window);
 
   const windows = [...shared, ...scoped.values()];
   if (windows.length === 0) return null;
@@ -198,8 +224,11 @@ export function parseRateLimitHeaders(headers: Headers): Quota | null {
   const shared = [read("5h", "5h"), read("7d", "Weekly")].filter(
     (w): w is QuotaWindow => w !== null,
   );
+  // `7d_oi` is the Fable-labelled row of the shared Fable/Mythos counter (omp `parseClaudeRateLimitHeaders`).
   const fable = read("7d_oi", "Fable weekly", "fable");
-  const windows = fable ? [...shared, fable] : shared;
+  const windows = fable
+    ? [...shared, ...sharedCounterWindows([{ family: "fable", window: fable }])]
+    : shared;
   return windows.length > 0 ? { windows, credits: null, ...sharedExhaustion(shared) } : null;
 }
 
@@ -254,6 +283,8 @@ export async function fetchAnthropicQuota(
           authorization: `Bearer ${token}`,
           ...(index === 0 ? headers : {}),
         },
+        // A redirect must never carry the account's bearer to another host (opencodex bfdb2bc43).
+        redirect: "error",
         signal,
       });
     } catch (error) {

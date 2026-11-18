@@ -185,11 +185,15 @@ describe("sign-in", () => {
     const up = fakeFetch(() => Response.json({ access_token: "new-access", expires_in: 7200 }));
     const provider = createChatgptSubscriptionOAuth({ fetch: up.fetch, now: () => NOW });
     const refreshed = await provider.refresh(stored);
+    // A refresh nearing expiry says so (codex-rs `RefreshReason`, as omp's `{refresh_reason}` resolves it).
     expect(up.calls[0]!.body).toEqual({
       grant_type: "refresh_token",
       client_id: CLIENT_ID,
       refresh_token: "rt-old",
+      refresh_reason: "proactive_expiry",
     });
+    await provider.refresh(stored, "unauthorized");
+    expect(up.calls[1]!.body).toMatchObject({ refresh_reason: "unauthorized_recovery" });
     expect(refreshed).toEqual({
       accessToken: "new-access",
       refreshToken: "rt-old",
@@ -265,7 +269,7 @@ const WEATHER = {
 describe("request translation", () => {
   const translate = (body: Json) => toCodexRequest({ model: "gpt-5.6-sol", ...body }) as Json;
 
-  it("sends a stored-nothing, always-streamed Responses request with the first system prompt as instructions", () => {
+  it("sends a stored-nothing, always-streamed Responses request with the first system prompt as the leading base-instructions message", () => {
     const out = translate({
       messages: [
         { role: "system", content: "Be brief." },
@@ -284,10 +288,19 @@ describe("request translation", () => {
       stream: false,
     });
     // Like omp: the other system prompts are developer messages in front of the conversation.
+    expect(Object.keys(out)).toEqual(["model", "stream", "input", "store", "include"]);
     expect(out).toEqual({
       model: "gpt-5.6-sol",
-      instructions: "Be brief.",
+      stream: true,
       input: [
+        {
+          type: "message",
+          role: "developer",
+          content: [{ type: "input_text", text: "Be brief." }],
+          internal_chat_message_metadata_passthrough: {
+            content_item_kinds: ["model.base_instructions"],
+          },
+        },
         {
           type: "message",
           role: "developer",
@@ -308,7 +321,6 @@ describe("request translation", () => {
         { role: "user", content: [{ type: "input_text", text: "weather?" }] },
       ],
       store: false,
-      stream: true,
       include: ["reasoning.encrypted_content"],
     });
   });
@@ -326,13 +338,24 @@ describe("request translation", () => {
   });
 
   it("supplies instructions when the client sent none, and asks the system prompt when it is all there is", () => {
-    expect(translate({ messages: [{ role: "user", content: "hi" }] }).instructions).toBe(
-      "You are a helpful assistant.",
-    );
+    const baseOf = (out: Json) => (out.input as Json[])[0];
+    expect(baseOf(translate({ messages: [{ role: "user", content: "hi" }] }))).toMatchObject({
+      role: "developer",
+      content: [{ type: "input_text", text: "You are a helpful assistant." }],
+    });
     const only = translate({ messages: [{ role: "system", content: "Say hi." }] });
-    expect(only.input).toEqual([
+    expect((only.input as Json[]).slice(1)).toEqual([
       { type: "message", role: "user", content: [{ type: "input_text", text: "Say hi." }] },
     ]);
+    // Without a cache key the base-instructions message carries no id.
+    expect(baseOf(only)).toEqual({
+      type: "message",
+      role: "developer",
+      content: [{ type: "input_text", text: "Say hi." }],
+      internal_chat_message_metadata_passthrough: {
+        content_item_kinds: ["model.base_instructions"],
+      },
+    });
     expect(() => translate({ messages: [] })).toThrow("at least one");
     // Blank messages carry nothing.
     expect(() => translate({ messages: [{ role: "user", content: "  " }] })).toThrow(
@@ -354,7 +377,7 @@ describe("request translation", () => {
       ],
     });
     // Text first, then the images; the detail is always on the wire.
-    expect(out.input[0].content).toEqual([
+    expect(out.input[1].content).toEqual([
       { type: "input_text", text: "what is this" },
       { type: "input_image", detail: "high", image_url: "https://x.test/a.png" },
       { type: "input_image", detail: "auto", image_url: "data:image/png;base64,AAAA" },
@@ -419,9 +442,9 @@ describe("request translation", () => {
     expect(out.tool_choice).toEqual({ type: "function", name: "get_weather" });
     expect(out.parallel_tool_calls).toBe(false);
 
-    const sanitized = out.input[3].call_id as string;
+    const sanitized = out.input[4].call_id as string;
     expect(sanitized).toMatch(/^weird_id_with_chars_[0-9a-z]+$/);
-    expect(out.input.slice(1)).toEqual([
+    expect(out.input.slice(2)).toEqual([
       {
         type: "message",
         role: "assistant",
@@ -870,7 +893,7 @@ describe("adapter", () => {
       authorization: `Bearer ${accessToken()}`,
       "chatgpt-account-id": ACCOUNT,
       originator: "omp",
-      version: "0.159.0",
+      version: "0.169.0",
       "user-agent": USER_AGENT,
       accept: "text/event-stream",
       "content-type": "application/json",
@@ -880,7 +903,7 @@ describe("adapter", () => {
       "x-client-request-id": "conv-1",
       "x-codex-routing-hint": "model=gpt-5.6-sol",
     });
-    expect(USER_AGENT).toBe("omp/18.20.2");
+    expect(USER_AGENT).toBe("omp/18.22.2");
     // codex-rs (and omp since 18.17) sends `OpenAI-Beta` only on the WebSocket handshake: HTTP carries none.
     expect(sent.headers["openai-beta"]).toBeUndefined();
     expect(sent.headers["thread-id"]).toMatch(UUID);
@@ -905,10 +928,22 @@ describe("adapter", () => {
     });
     expect(sent.body).toMatchObject({
       model: "gpt-5.6-sol",
-      instructions: "Be brief.",
       store: false,
       stream: true,
       prompt_cache_key: "conv-1",
+    });
+    // Since codex-rs 0.162 the base instructions are the leading developer message of the input, not a
+    // top-level field; the routing fields lead the body (0.161), ahead of `input`.
+    expect(sent.body.instructions).toBeUndefined();
+    expect(Object.keys(sent.body).slice(0, 3)).toEqual(["model", "stream", "input"]);
+    expect((sent.body.input as Json[])[0]).toEqual({
+      id: "msg_5d048413-a136-57c3-9727-8ffafe7f50f9",
+      type: "message",
+      role: "developer",
+      content: [{ type: "input_text", text: "Be brief." }],
+      internal_chat_message_metadata_passthrough: {
+        content_item_kinds: ["model.base_instructions"],
+      },
     });
 
     // Always streamed upstream, whatever the client asked for.

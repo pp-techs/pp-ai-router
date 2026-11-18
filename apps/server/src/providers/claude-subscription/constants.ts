@@ -94,7 +94,7 @@ export const BUILTIN_TOOLS: Readonly<Record<string, true>> = {
 export const SDK_VERSION = "0.128.0";
 
 /** Claude Code CLI release the requests present; replaced at run time when Anthropic names a newer minimum (omp 18.18.6). */
-export const DEFAULT_CLI_VERSION = "2.1.321";
+export const DEFAULT_CLI_VERSION = "2.1.326";
 
 /** What the Stainless SDK reports for `process.platform` / `process.arch`. */
 function stainlessOs(platform: string): string {

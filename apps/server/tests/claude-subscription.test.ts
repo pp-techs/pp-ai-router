@@ -888,6 +888,7 @@ describe("model scopes and rate-limit headers", () => {
         { label: "5h", usedPercent: 25, resetsAt: 1_800_000_000_000 },
         { label: "Weekly", usedPercent: 100, resetsAt: 1_800_100_000_000 },
         { label: "Fable weekly", usedPercent: 50, resetsAt: null, scope: "fable" },
+        { label: "Mythos weekly", usedPercent: 50, resetsAt: null, scope: "mythos" },
       ],
       credits: null,
       exhausted: true,
@@ -971,6 +972,40 @@ describe("model scopes and rate-limit headers", () => {
     });
     expect((await chat(s, fable)).status).toBe(200);
     expect(s.claude.messages()).toHaveLength(2);
+  });
+
+  it("judges Fable and Mythos by the one scoped weekly row, labelled Fable", async () => {
+    const s = await setup();
+    await s.login();
+    const resetsAt = new Date(s.h.clock.now + 2 * HOUR).toISOString();
+    s.claude.usage.push(
+      Response.json({
+        five_hour: { utilization: 10, resets_at: null },
+        seven_day: { utilization: 20, resets_at: null },
+        limits: [
+          {
+            kind: "weekly_scoped",
+            percent: 100,
+            resets_at: resetsAt,
+            scope: { model: { display_name: "Fable" } },
+          },
+        ],
+      }),
+    );
+    const [cred] = (await s.h.admin("GET", "/providers/sub/credentials")).json.data;
+    const status = await s.h.services.quota.get(cred.id, { maxAgeMs: 0 });
+    expect(status).toMatchObject({ ok: true });
+    expect((status as { quota: { windows: unknown[] } }).quota.windows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Fable weekly", scope: "fable", usedPercent: 100 }),
+        expect.objectContaining({ label: "Mythos weekly", scope: "mythos", usedPercent: 100 }),
+      ]),
+    );
+
+    expect((await chat(s, { model: "sub/claude-mythos-1" })).status).toBe(503);
+    expect((await chat(s, { model: "sub/claude-fable-1" })).status).toBe(503);
+    expect(s.claude.messages()).toHaveLength(0);
+    expect((await chat(s, {})).status).toBe(200);
   });
 
   it("parks a family whose weekly window is spent, but not the account", async () => {

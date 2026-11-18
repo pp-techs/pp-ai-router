@@ -72,12 +72,28 @@ function rejectAllExcept(accepted: readonly string[]): ReadonlySet<string> {
 }
 
 /**
- * Per-model exceptions (opencodex #8451 probes): Opus 4.5 took every rejected keyword; the 5.5 Opus and
- * Sonnet took `pattern` and `maximum`. An id nobody probed keeps the default strip.
+ * Per-model exceptions (opencodex #8451 probes): Opus 4.5 took every rejected keyword; Sonnet 5.5 took
+ * `pattern` and `maximum`. Opus 5.5 also keeps the twelve keywords the Claude Desktop and Claude Code
+ * catalogs carry (production traffic sent them unstripped without a ValidationException). An id
+ * nobody probed keeps the default strip.
  */
+const OPUS_55_ACCEPTED_SCHEMA_KEYS = [
+  "$schema",
+  "additionalProperties",
+  "pattern",
+  "format",
+  "minLength",
+  "maxLength",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "minItems",
+  "maxItems",
+  "propertyNames",
+] as const;
 const SCHEMA_KEY_EXCEPTIONS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   ["claude-opus-4.5", NO_SCHEMA_KEYS],
-  ["claude-opus-5.5", rejectAllExcept(["pattern", "maximum"])],
+  ["claude-opus-5.5", rejectAllExcept(OPUS_55_ACCEPTED_SCHEMA_KEYS)],
   ["claude-sonnet-5.5", rejectAllExcept(["pattern", "maximum"])],
 ]);
 
