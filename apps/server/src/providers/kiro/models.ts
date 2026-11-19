@@ -5,7 +5,7 @@ import type { ModelInfo } from "../adapter.ts";
  * The reference's model list is static too (its `ListAvailableModels` call only feeds per-account routing
  * evidence, never the list), so this is a fixed list. Context windows are the ones Kiro documents. Any
  * other id still works as `kiro/<id>` (the router passes unknown ids through). Like the reference, the
- * list also carries ids announced ahead of Kiro's catalog (GPT-6 Sol/Luna and GPT-6.1 Sol/Terra):
+ * list also carries ids announced ahead of Kiro's catalog (GPT-6 Sol/Luna, GPT-6.1 Sol/Terra, GPT-6.2 Sol/Astra):
  * requests for them fail upstream until Kiro ships them. Claude Sonnet 5.5, Opus 5.5 and Haiku 5.5 are
  * listed on kiro.dev.
  * Checked against https://kiro.dev/docs/models/ (updated 2026-10-24). Claude Fable 5.1
@@ -22,6 +22,8 @@ export const KIRO_MODELS: readonly ModelInfo[] = [
   { id: "gpt-6-luna", contextWindow: 272_000 },
   { id: "gpt-6.1-sol", contextWindow: 272_000 },
   { id: "gpt-6.1-terra", contextWindow: 272_000 },
+  { id: "gpt-6.2-sol", contextWindow: 272_000 },
+  { id: "gpt-6.2-astra", contextWindow: 272_000 },
   { id: "claude-sonnet-5.5", contextWindow: 1_000_000 },
   { id: "claude-sonnet-5", contextWindow: 1_000_000 },
   { id: "claude-opus-5.5", contextWindow: 1_000_000 },
