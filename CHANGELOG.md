@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.25.1] — 2026-11-19
+
+Sync subscription providers with opencodex v2.100.3-129 (`fc0816c29`) and oh-my-pi 19.0.0 (`57771ae562`).
+
+ChatGPT subscription: the user agent follows omp 19.0.0 (`omp/19.0.0`); the Codex client version, OAuth rules and `wham/usage` parsing (including the Business/Enterprise `spend_control` cap) were unchanged or already ported.
+
+Kiro: `gpt-6.2-sol` and `gpt-6.2-astra` are listed ahead of Kiro's catalog, with native `reasoning` effort like GPT-6.1 Sol (opencodex `c320932c1`); requests for them fail upstream until Kiro ships them.
+
+Claude subscription and Antigravity: no wire change. The four OAuth flows were re-verified and needed no change.
+
 ## [0.25.0] — 2026-11-18
 
 Sync subscription providers with opencodex v2.100.3-87 (`04304da28`) and oh-my-pi 18.22.2 (`e1ae2cc998`).
