@@ -1178,9 +1178,15 @@ describe("response mapping", () => {
     ).rejects.toThrow(/truncated/);
     await expect(run([part([], "MALFORMED_FUNCTION_CALL")])).rejects.toThrow(/truncated/);
     // A backend fault ends the turn as an error, not a clean stop.
-    await expect(run([part([{ text: "partial" }], "MALFORMED_RESPONSE")])).rejects.toThrow(
-      /MALFORMED_RESPONSE/,
-    );
+    await expect(run([part([], "MALFORMED_RESPONSE")])).rejects.toThrow(/MALFORMED_RESPONSE/);
+    await expect(run([part([], "UNEXPECTED_TOOL_CALL")])).rejects.toThrow(/UNEXPECTED_TOOL_CALL/);
+    // With visible output the finish maps to a stop reason instead of discarding the turn.
+    const partial = await run([part([{ text: "partial" }], "MALFORMED_RESPONSE")]);
+    expect(partial.at(-1)?.choices[0]?.finish_reason).toBe("content_filter");
+    const imageSafety = await run([part([{ text: "x" }], "IMAGE_SAFETY")]);
+    expect(imageSafety.at(-1)?.choices[0]?.finish_reason).toBe("content_filter");
+    const unexpected = await run([part([{ text: "x" }], "UNEXPECTED_TOOL_CALL")]);
+    expect(unexpected.at(-1)?.choices[0]?.finish_reason).toBe("stop");
     await expect(run([part([{ text: "cut off" }])])).rejects.toThrow(/without a terminal signal/);
     await expect(run([])).rejects.toThrow(/without a terminal signal/);
     await expect(run("data: {not json}\n\n")).rejects.toThrow(/malformed upstream SSE/);
@@ -1490,6 +1496,30 @@ describe("adapter.call", () => {
         JSON.stringify({ error: [{ details: [{ retryDelay: "0s" }, { retryDelay: "7s" }] }] }),
       ),
     ).toBe("7");
+    // Go compound durations, typed precedence over untyped, and the message fallback.
+    expect(
+      googleRetryAfterSeconds(JSON.stringify({ error: { details: [{ retryDelay: "1m30s" }] } })),
+    ).toBe("90");
+    expect(
+      googleRetryAfterSeconds(
+        JSON.stringify({
+          error: {
+            details: [
+              { retryDelay: "9s" },
+              { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "3s" },
+            ],
+          },
+        }),
+      ),
+    ).toBe("3");
+    expect(
+      googleRetryAfterSeconds(
+        JSON.stringify({ error: { message: "Quota exceeded. Please retry after 12s." } }),
+      ),
+    ).toBe("12");
+    expect(
+      googleRetryAfterSeconds(JSON.stringify({ error: { details: [{ retryDelay: "-5s" }] } })),
+    ).toBeUndefined();
   });
 
   it("answers an unsupported request with a 400 without calling Google", async () => {
