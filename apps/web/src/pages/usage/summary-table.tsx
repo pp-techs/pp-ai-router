@@ -9,20 +9,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatInt, formatUsd } from "@/lib/format";
+import { formatInt, formatLatency, formatUsd } from "@/lib/format";
+import { cacheHitRate, errorRate, formatPercent, totalsOf } from "@/lib/insights";
 
-export function summaryTotals(rows: UsageSummaryRow[]) {
-  return rows.reduce(
-    (t, r) => ({
-      requests: t.requests + r.requests,
-      input_tokens: t.input_tokens + r.input_tokens,
-      output_tokens: t.output_tokens + r.output_tokens,
-      cost_usd: t.cost_usd + r.cost_usd,
-      unpriced_requests: t.unpriced_requests + r.unpriced_requests,
-    }),
-    { requests: 0, input_tokens: 0, output_tokens: 0, cost_usd: 0, unpriced_requests: 0 },
-  );
-}
+export const summaryTotals = totalsOf;
 
 export function SummaryTable({
   rows,
@@ -45,6 +35,9 @@ export function SummaryTable({
           <TableHead className="text-right">Requests</TableHead>
           <TableHead className="text-right">Input tokens</TableHead>
           <TableHead className="text-right">Output tokens</TableHead>
+          <TableHead className="text-right">Cache hit</TableHead>
+          <TableHead className="text-right">Errors</TableHead>
+          <TableHead className="text-right">Avg latency</TableHead>
           <TableHead className="text-right">Cost</TableHead>
         </TableRow>
       </TableHeader>
@@ -55,6 +48,19 @@ export function SummaryTable({
             <TableCell className="text-right tabular-nums">{formatInt(r.requests)}</TableCell>
             <TableCell className="text-right tabular-nums">{formatInt(r.input_tokens)}</TableCell>
             <TableCell className="text-right tabular-nums">{formatInt(r.output_tokens)}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatPercent(cacheHitRate(r), 0)}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {r.failed_requests > 0 ? (
+                <span className="text-destructive">{formatPercent(errorRate(r))}</span>
+              ) : (
+                formatPercent(0, 0)
+              )}
+            </TableCell>
+            <TableCell className="text-right tabular-nums">
+              {formatLatency(r.avg_latency_ms)}
+            </TableCell>
             <TableCell className="text-right whitespace-nowrap tabular-nums">
               {formatUsd(r.cost_usd)}
               {r.unpriced_requests > 0 && (
@@ -81,6 +87,15 @@ export function SummaryTable({
             </TableCell>
             <TableCell className="text-right font-semibold tabular-nums">
               {formatInt(totals.output_tokens)}
+            </TableCell>
+            <TableCell className="text-right font-semibold tabular-nums">
+              {formatPercent(cacheHitRate(totals), 0)}
+            </TableCell>
+            <TableCell className="text-right font-semibold tabular-nums">
+              {formatPercent(errorRate(totals))}
+            </TableCell>
+            <TableCell className="text-right font-semibold tabular-nums">
+              {totals.requests > 0 ? formatLatency(totals.avg_latency_ms) : "—"}
             </TableCell>
             <TableCell className="text-right font-semibold whitespace-nowrap tabular-nums">
               {formatUsd(totals.cost_usd)}

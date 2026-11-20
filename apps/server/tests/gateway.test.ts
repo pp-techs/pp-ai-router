@@ -80,6 +80,25 @@ describe("request lifecycle", () => {
     ).json;
     expect(scoped.data.map((r: Bucket) => [r.ts, r.requests])).toEqual([[start, 1]]);
 
+    const grouped = (
+      await h.admin("GET", `/usage/timeline?since=${start}&bucket_ms=${HOUR}&group_by=key`)
+    ).json;
+    expect(
+      grouped.data
+        .map((r: Bucket & { group: string }) => [r.ts, r.group, r.requests])
+        .sort((x: unknown[], y: unknown[]) => String(x).localeCompare(String(y))),
+    ).toEqual(
+      [
+        [start, a.id, 1],
+        [start, b.id, 1],
+        [start + 2 * HOUR, a.id, 1],
+      ].sort((x, y) => String(x).localeCompare(String(y))),
+    );
+    expect(
+      (await h.admin("GET", `/usage/timeline?since=${start}&bucket_ms=${HOUR}&group_by=nope`))
+        .status,
+    ).toBe(400);
+
     expect((await h.admin("GET", "/usage/timeline?bucket_ms=5")).status).toBe(400);
     expect((await h.admin("GET", "/usage/timeline")).status).toBe(400);
   });
@@ -164,6 +183,7 @@ describe("request lifecycle", () => {
     expect(await ids("q=gamma")).toEqual([3]);
     expect(await ids(`since=${t0 + 1500}`)).toEqual([3]);
     expect(await ids("provider_id=acme&status=aborted")).toEqual([3]);
+    expect(await ids(`since=${t0}&until=${t0 + 1000}`)).toEqual([1]);
 
     expect((await h.admin("GET", "/usage?status=nope")).status).toBe(400);
     expect((await h.admin("GET", "/usage?stream=2")).status).toBe(400);
@@ -180,6 +200,11 @@ describe("request lifecycle", () => {
         output_tokens: 5,
         cost_usd: 0,
         unpriced_requests: 1,
+        cached_tokens: 0,
+        reasoning_tokens: 0,
+        failed_requests: 1,
+        avg_latency_ms: 10,
+        max_latency_ms: 10,
       },
     ]);
 

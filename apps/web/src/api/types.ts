@@ -235,6 +235,12 @@ export interface UsageSummaryRow {
   output_tokens: number;
   cost_usd: number;
   unpriced_requests: number;
+  cached_tokens: number;
+  reasoning_tokens: number;
+  /** Requests that did not end `ok`. */
+  failed_requests: number;
+  avg_latency_ms: number;
+  max_latency_ms: number;
 }
 
 export interface UsageBucket {
@@ -246,6 +252,17 @@ export interface UsageBucket {
   input_tokens: number;
   output_tokens: number;
   cost_usd: number;
+}
+
+/** A bucket split per group, from a timeline requested with `group_by`. */
+export interface GroupedUsageBucket extends UsageBucket {
+  group: string;
+}
+
+export interface GroupedUsageTimeline {
+  since: number;
+  bucket_ms: number;
+  data: GroupedUsageBucket[];
 }
 
 export interface UsageTimeline {

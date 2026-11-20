@@ -29,6 +29,7 @@ import type {
   ProviderModels,
   ProviderQuotaReport,
   ProviderType,
+  GroupedUsageTimeline,
   UsageEvent,
   UsageFilter,
   UsageGroup,
@@ -134,14 +135,24 @@ export const api = {
 
   usage: (filter: UsageFilter) =>
     unwrap(request<List<UsageEvent>>("GET", "/admin/usage", { query: { ...filter } })),
-  usageSummary: (groupBy: UsageGroup, since: number, filter: UsageQuery = {}) =>
+  usageSummary: (groupBy: UsageGroup, since: number, filter: UsageQuery = {}, until?: number) =>
     request<UsageSummary>("GET", "/admin/usage/summary", {
-      query: { ...filter, group_by: groupBy, since },
+      query: { ...filter, group_by: groupBy, since, until },
     }),
 
   usageTimeline: (since: number, bucketMs: number, filter: UsageQuery = {}) =>
     request<UsageTimeline>("GET", "/admin/usage/timeline", {
       query: { ...filter, since, bucket_ms: bucketMs },
+    }),
+
+  usageTimelineBy: (
+    groupBy: UsageGroup,
+    since: number,
+    bucketMs: number,
+    filter: UsageQuery = {},
+  ) =>
+    request<GroupedUsageTimeline>("GET", "/admin/usage/timeline", {
+      query: { ...filter, group_by: groupBy, since, bucket_ms: bucketMs },
     }),
 
   auditLogs: (filter?: AuditLogFilter) =>
