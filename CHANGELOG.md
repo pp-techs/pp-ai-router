@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.26.0] — 2026-11-20
+
+Add a Breakdown chart to the Overview and Usage pages: cost, requests or tokens over time stacked by API key, provider or model, with a ranked share list. `GET /admin/usage/timeline` accepts `group_by=key|provider|model` and returns per-group buckets.
+
+Richer usage insights: the Overview shows eight headline stats (requests and cost compared with the previous 24 hours, 30-day projection, tokens, error rate, average latency, cache hit rate, cost per 1M tokens), and summary tables gain cache hit, error rate and average latency columns. `GET /admin/usage/summary` now returns cached and reasoning tokens, failed requests and average/max latency per group, and the usage endpoints accept `until`.
+
 ## [0.25.1] — 2026-11-19
 
 Sync subscription providers with opencodex v2.100.3-129 (`fc0816c29`) and oh-my-pi 19.0.0 (`57771ae562`).
