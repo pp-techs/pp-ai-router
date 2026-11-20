@@ -110,6 +110,63 @@ describe("Kiro usage", () => {
     expect(parseKiroUsage(spent)?.exhausted).toBe(false);
   });
 
+  it("counts unexpired purchased add-on credits as allowance, current list first, legacy list as fallback", () => {
+    const now = 1_700_000_000_000;
+    const spent = {
+      overageConfiguration: { overageStatus: "DISABLED" },
+      usageBreakdownList: [
+        {
+          resourceType: "CREDIT",
+          currentUsage: 50,
+          usageLimit: 50,
+          addOnMetadata: { addOns: [{ currentUsage: 1, usageLimit: 10 }] },
+        },
+      ],
+    };
+    const withRow = (row: Record<string, unknown>) => ({
+      ...spent,
+      usageBreakdownList: [{ ...spent.usageBreakdownList[0], ...row }],
+    });
+    expect(parseKiroUsage(spent, now)?.exhausted).toBe(false);
+    // a spent or expired add-on leaves the account exhausted
+    expect(
+      parseKiroUsage(
+        withRow({ addOnMetadata: { addOns: [{ currentUsage: 10, usageLimit: 10 }] } }),
+        now,
+      )?.exhausted,
+    ).toBe(true);
+    expect(
+      parseKiroUsage(
+        withRow({
+          addOnMetadata: {
+            addOns: [{ currentUsage: 1, usageLimit: 10, expiresAt: now / 1000 - 1 }],
+          },
+        }),
+        now,
+      )?.exhausted,
+    ).toBe(true);
+    // an empty current list falls back to the legacy overageCredits list
+    expect(
+      parseKiroUsage(
+        withRow({
+          addOnMetadata: { addOns: [] },
+          overageCredits: [{ currentUsage: 1, usageLimit: 10 }],
+        }),
+        now,
+      )?.exhausted,
+    ).toBe(false);
+    // a non-empty current list wins: the legacy list is not combined with it
+    expect(
+      parseKiroUsage(
+        withRow({
+          addOnMetadata: { addOns: [{ currentUsage: 10, usageLimit: 10 }] },
+          overageCredits: [{ currentUsage: 1, usageLimit: 10 }],
+        }),
+        now,
+      )?.exhausted,
+    ).toBe(true);
+  });
+
   it.each([
     ["no limit", { currentUsage: 1, usageLimit: 0 }],
     ["negative usage", { currentUsage: -1, usageLimit: 10 }],

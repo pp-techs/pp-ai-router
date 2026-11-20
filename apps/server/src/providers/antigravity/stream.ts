@@ -19,7 +19,14 @@ const CONTENT_FILTER_REASONS = new Set([
   "BLOCKLIST",
   "PROHIBITED_CONTENT",
   "SPII",
+  "IMAGE_SAFETY",
+  "IMAGE_PROHIBITED_CONTENT",
+  // Reached only once some output arrived; a zero-output turn fails closed in `finish`.
+  "MALFORMED_RESPONSE",
 ]);
+
+/** Finishes that mean the model's output was dropped upstream; they fail only when nothing visible arrived. */
+const DROPPED_OUTPUT_REASONS = new Set(["UNEXPECTED_TOOL_CALL", "MALFORMED_RESPONSE"]);
 
 /** Cap on the RPC `details` appended to an in-band error message. */
 const MAX_ERROR_DETAILS_CHARS = 1_000;
@@ -51,6 +58,7 @@ export class GeminiMapper {
   #sawTerminal = false;
   #toolCalls = 0;
   #finishReason: string | undefined;
+  #sawVisibleOutput = false;
   #usage: OpenAIUsage | undefined;
   #carriedSignature: string | undefined;
   /** Whether any frame carried a candidate (a buffered answer without one is an error). */
@@ -160,6 +168,7 @@ export class GeminiMapper {
 
     const out: OpenAIChunk[] = [];
     const emit = (delta: Parameters<typeof chunk>[1]) => {
+      this.#sawVisibleOutput = true;
       if (!this.#started) {
         this.#started = true;
         out.push(chunk(this.#meta, { role: "assistant", content: "" }));
@@ -204,9 +213,15 @@ export class GeminiMapper {
         `Antigravity response truncated upstream before the turn completed (${reason.slice(0, 160)})`,
       );
     }
-    // A backend fault, not a verdict on the request (oh-my-pi): it must not look like a clean stop.
-    if (reason === "MALFORMED_RESPONSE") {
-      throw new Error("Antigravity response failed upstream (MALFORMED_RESPONSE)");
+    // A backend fault or dropped output (CPA's zero-output guard): fail only when no text or call
+    // reached the client; otherwise a finished turn maps to its stop reason below.
+    if (
+      reason !== undefined &&
+      DROPPED_OUTPUT_REASONS.has(reason) &&
+      this.#toolCalls === 0 &&
+      !this.#sawVisibleOutput
+    ) {
+      throw new Error(`Antigravity response failed upstream (${reason.slice(0, 160)})`);
     }
     if (!this.#sawFrame || !this.#sawTerminal) {
       throw new Error("upstream stream ended without a terminal signal — possible truncation");

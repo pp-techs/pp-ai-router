@@ -47,8 +47,28 @@ function selectBreakdown(list: unknown): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * Purchased add-on credits are prepaid allowance beyond the plan (omp 9d3cb07936, 39a516ad8d). They are
+ * listed in `addOnMetadata.addOns` and again in the legacy `overageCredits`; the legacy list is read only
+ * when the current one is missing or empty, never both. An expired purchase does not count.
+ */
+function addOnCreditsLeft(breakdown: Record<string, unknown>, now: number): boolean {
+  const current = asRecord(breakdown.addOnMetadata)?.addOns;
+  const list = Array.isArray(current) && current.length > 0 ? current : breakdown.overageCredits;
+  if (!Array.isArray(list)) return false;
+  return list.some((entry) => {
+    const row = asRecord(entry);
+    if (!row) return false;
+    const used = precise(row, "currentUsageWithPrecision", "currentUsage");
+    const limit = precise(row, "usageLimitWithPrecision", "usageLimit");
+    if (used === undefined || limit === undefined || limit <= 0 || used >= limit) return false;
+    const expiresAt = normalizeResetAt(row.expiresAt);
+    return expiresAt === null || expiresAt === undefined || expiresAt > now;
+  });
+}
+
 /** `null` when the body is not a usage document we recognise: unknown, never a fabricated zero. */
-export function parseKiroUsage(body: unknown): Quota | null {
+export function parseKiroUsage(body: unknown, now = Date.now()): Quota | null {
   const payload = asRecord(body);
   const breakdown = selectBreakdown(payload?.usageBreakdownList);
   if (!payload || !breakdown) return null;
@@ -83,7 +103,7 @@ export function parseKiroUsage(body: unknown): Quota | null {
   return {
     windows,
     credits: { used, limit },
-    exhausted: used >= limit && overage === "DISABLED",
+    exhausted: used >= limit && overage === "DISABLED" && !addOnCreditsLeft(breakdown, now),
     resetsAt,
   };
 }

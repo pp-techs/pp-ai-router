@@ -133,7 +133,14 @@ export function describeKiroFailure(
   const evidence = detail.toLowerCase();
   const fallbackStatus = status ?? 502;
 
-  if (any(evidence, ["content_length_exceeds_threshold", "content length exceeds"]))
+  // "Input is too long." is the Kiro CLI's context-overflow marker on any HTTP status (omp 739d75821a).
+  if (
+    any(evidence, [
+      "content_length_exceeds_threshold",
+      "content length exceeds",
+      "input is too long",
+    ])
+  )
     return {
       status: 400,
       code: "context_length_exceeded",

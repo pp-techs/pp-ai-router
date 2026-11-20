@@ -11,9 +11,49 @@ import { buildRequest, UnsupportedRequestError, type BuiltRequest } from "./requ
 import { chunksFromJson, chunksFromSse, GeminiMapper } from "./stream.ts";
 import { repairInvalidRequestBody } from "./wire-compiler.ts";
 
+const DURATION_UNIT_MS: Readonly<Record<string, number>> = {
+  h: 3_600_000,
+  m: 60_000,
+  s: 1_000,
+  ms: 1,
+  us: 0.001,
+  µs: 0.001,
+  ns: 0.000001,
+};
+const MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1_000;
+
 /**
- * The retry delay (whole seconds) a Google error body names: `RetryInfo.retryDelay` or
- * `ErrorInfo.metadata.quotaResetDelay` (`"42.5s"` -> `"43"`). Undefined when it names none.
+ * Google duration text as milliseconds: protobuf Duration JSON ("30s", "0.5s") and Go-style compound
+ * durations ("1h2m3s", "500ms"). Undefined for anything else, a negative value or more than 30 days.
+ */
+function parseGoogleDurationMs(raw: string): number | undefined {
+  const text = raw.trim();
+  if (!text || text.length > 64) return undefined;
+  let total = 0;
+  let consumed = 0;
+  for (const match of text.matchAll(/(\d+(?:\.\d+)?)(ms|us|µs|ns|h|m|s)/gy)) {
+    if (match.index !== consumed) return undefined;
+    total += Number(match[1]) * DURATION_UNIT_MS[match[2]!]!;
+    consumed += match[0].length;
+  }
+  if (consumed !== text.length || !Number.isFinite(total) || total > MAX_DURATION_MS) {
+    return undefined;
+  }
+  return total;
+}
+
+function positiveDelayMs(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  // Legacy responses also put whitespace before the seconds suffix.
+  const seconds = /^\s*(\d+(?:\.\d+)?)\s*s\s*$/i.exec(value);
+  const ms = parseGoogleDurationMs(seconds ? `${seconds[1]}s` : value);
+  return ms !== undefined && ms > 0 ? ms : undefined;
+}
+
+/**
+ * The retry delay (whole seconds) a Google error body names: a typed `RetryInfo.retryDelay`, then
+ * `ErrorInfo.metadata.quotaResetDelay`, then an untyped detail, then "retry/reset after <duration>"
+ * in the message (`"42.5s"` -> `"43"`). Undefined when it names none.
  */
 export function googleRetryAfterSeconds(payloadText: string): string | undefined {
   let parsed: unknown;
@@ -24,21 +64,32 @@ export function googleRetryAfterSeconds(payloadText: string): string | undefined
   }
   const error = isRecord(parsed) ? parsed.error : undefined;
   const root = Array.isArray(error) ? error[0] : (error ?? parsed);
-  if (!isRecord(root) || !Array.isArray(root.details)) return undefined;
-  for (const detail of root.details as unknown[]) {
+  if (!isRecord(root)) return undefined;
+  let typedRetry: number | undefined;
+  let quotaReset: number | undefined;
+  let untyped: number | undefined;
+  const details: unknown[] = Array.isArray(root.details) ? root.details.slice(0, 32) : [];
+  for (const detail of details) {
     if (!isRecord(detail)) continue;
-    const raw =
-      typeof detail.retryDelay === "string"
-        ? detail.retryDelay
-        : isRecord(detail.metadata) && typeof detail.metadata.quotaResetDelay === "string"
-          ? detail.metadata.quotaResetDelay
-          : undefined;
-    const match = raw === undefined ? null : /^\s*(\d+(?:\.\d+)?)\s*s\s*$/i.exec(raw);
-    if (!match) continue;
-    const seconds = Math.ceil(Number(match[1]));
-    if (Number.isFinite(seconds) && seconds > 0) return String(seconds);
+    const type = detail["@type"];
+    const name = typeof type === "string" ? type.slice(type.lastIndexOf("/") + 1) : undefined;
+    const metadata = isRecord(detail.metadata) ? detail.metadata : undefined;
+    if (name === "google.rpc.ErrorInfo") {
+      quotaReset ??= positiveDelayMs(metadata?.quotaResetDelay);
+    } else if (name === "google.rpc.RetryInfo") {
+      typedRetry ??= positiveDelayMs(detail.retryDelay);
+    } else if (type === undefined) {
+      untyped ??= positiveDelayMs(detail.retryDelay) ?? positiveDelayMs(metadata?.quotaResetDelay);
+    }
   }
-  return undefined;
+  let ms = typedRetry ?? quotaReset ?? untyped;
+  if (ms === undefined && typeof root.message === "string") {
+    const match = /\b(?:retry|resets?)\s+after\s+(\d[\w.µ]*?)[.,;]?(?:\s|$)/i.exec(
+      root.message.slice(0, 2_000),
+    );
+    if (match) ms = parseGoogleDurationMs(match[1]!);
+  }
+  return ms !== undefined && ms > 0 ? String(Math.ceil(ms / 1000)) : undefined;
 }
 
 /**

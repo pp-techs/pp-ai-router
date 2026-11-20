@@ -1531,6 +1531,13 @@ describe("kiro adapter", () => {
     expect(context.res.status).toBe(400);
     expect(context.json.error.code).toBe("context_length_exceeded");
 
+    // the Kiro CLI treats this body text as a context overflow on any status
+    for (const status of [400, 500]) {
+      const tooLong = await respondWith(status, '{"message":"Input is too long."}');
+      expect(tooLong.res.status).toBe(400);
+      expect(tooLong.json.error.code).toBe("context_length_exceeded");
+    }
+
     const server = await respondWith(500, '{"message":"internal secret detail"}');
     expect(server.res.status).toBe(500);
     expect(server.json.error.message).toBe("Kiro upstream service unavailable");
