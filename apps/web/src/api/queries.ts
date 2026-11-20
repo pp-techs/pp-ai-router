@@ -23,6 +23,8 @@ export const qk = {
   usageEvents: ["usage", "events"] as const,
   usageSummary: (group: UsageGroup, range: string, filter: UsageQuery = {}) =>
     ["usage", "summary", group, range, filter] as const,
+  usageTimelineBy: (group: UsageGroup, range: string, filter: UsageQuery = {}) =>
+    ["usage", "timeline", "by", group, range, filter] as const,
   usageTimeline: (range: string, filter: UsageQuery = {}) =>
     ["usage", "timeline", range, filter] as const,
   auditLogs: (filter?: AuditLogFilter) => ["audit-logs", filter] as const,

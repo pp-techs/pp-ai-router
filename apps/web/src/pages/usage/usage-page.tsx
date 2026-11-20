@@ -6,6 +6,7 @@ import { useState } from "react";
 import { OptionSelect } from "@/components/option-select";
 import { PageHeader } from "@/components/page";
 import { RANGE_KEYS, RANGES, type RangeKey } from "@/lib/timeline";
+import { BreakdownChart } from "./breakdown-chart";
 import { UsageChart } from "./usage-chart";
 import { UsageFilterBar } from "./usage-filters";
 import { UsageLedgerCard } from "./ledger-card";
@@ -40,6 +41,7 @@ export function UsagePage() {
           onChange={setQuery}
         />
         <UsageChart range={range} query={query} />
+        <BreakdownChart keys={keys.data} range={range} query={query} />
         <UsageSummaryCard keys={keys.data} range={range} query={query} />
         <UsageLedgerCard keys={keys.data} range={range} query={query} />
       </div>

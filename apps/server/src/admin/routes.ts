@@ -254,6 +254,11 @@ function usageWhere(q: Record<string, string | undefined>, since?: number): Usag
     where.push("ts >= ?");
     params.push(since);
   }
+  const until = usageSince(q.until, undefined);
+  if (until !== undefined) {
+    where.push("ts < ?");
+    params.push(until);
+  }
   return { where, params };
 }
 
@@ -1157,7 +1162,10 @@ export function createAdminApp(deps: AdminDeps): Hono {
     const rows = all<Record<string, unknown>>(
       db.prepare(
         `SELECT ${group} AS "group", COUNT(*) AS requests, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens,
-                SUM(cost_usd) AS cost_usd, SUM(price_source = 'unknown') AS unpriced_requests
+                SUM(cost_usd) AS cost_usd, SUM(price_source = 'unknown') AS unpriced_requests,
+                SUM(cached_tokens) AS cached_tokens, SUM(reasoning_tokens) AS reasoning_tokens,
+                SUM(status != 'ok') AS failed_requests, CAST(AVG(latency_ms) AS INTEGER) AS avg_latency_ms,
+                MAX(latency_ms) AS max_latency_ms
            FROM usage_events ${whereSql(where)} GROUP BY ${group} ORDER BY cost_usd DESC`,
       ),
       ...params,
@@ -1166,6 +1174,7 @@ export function createAdminApp(deps: AdminDeps): Hono {
   });
 
   // Non-empty buckets only, aligned to multiples of `bucket_ms` since the epoch; the UI fills gaps.
+  // With `group_by` (key, provider or model) each bucket is split per group and rows carry a `group`.
   app.get("/usage/timeline", (c) => {
     const q = c.req.query();
     const since = usageSince(q.since, now() - 86_400_000)!;
@@ -1173,13 +1182,24 @@ export function createAdminApp(deps: AdminDeps): Hono {
     if (!Number.isFinite(bucketMs) || bucketMs < 1000) {
       throw new HttpError(400, "invalid_request", "bucket_ms must be an integer of at least 1000");
     }
+    const group =
+      q.group_by === "provider"
+        ? "provider_id"
+        : q.group_by === "key"
+          ? "key_id"
+          : q.group_by === "model"
+            ? "model"
+            : null;
+    if (q.group_by && !group) {
+      throw new HttpError(400, "invalid_request", "group_by must be key, provider or model");
+    }
     const { where, params } = usageWhere(q, since);
     const rows = all<Record<string, unknown>>(
       db.prepare(
-        `SELECT CAST(ts / ${bucketMs} AS INTEGER) * ${bucketMs} AS ts, COUNT(*) AS requests,
+        `SELECT CAST(ts / ${bucketMs} AS INTEGER) * ${bucketMs} AS ts, ${group ? `${group} AS "group", ` : ""}COUNT(*) AS requests,
                 SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, SUM(cost_usd) AS cost_usd,
                 SUM(CASE WHEN status = 'ok' THEN 0 ELSE 1 END) AS failed_requests
-           FROM usage_events ${whereSql(where)} GROUP BY 1 ORDER BY 1`,
+           FROM usage_events ${whereSql(where)} GROUP BY ${group ? "1, 2" : "1"} ORDER BY 1`,
       ),
       ...params,
     );

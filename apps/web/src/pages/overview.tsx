@@ -1,65 +1,35 @@
-import {
-  ActivityIcon,
-  ArrowDownToLineIcon,
-  ArrowUpFromLineIcon,
-  CircleDollarSignIcon,
-  ServerOffIcon,
-} from "lucide-react";
+import { ServerOffIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { qk } from "@/api/queries";
-import { PageHeader, Panel, Stat } from "@/components/page";
+import { PageHeader, Panel } from "@/components/page";
 import { EmptyState, QueryBoundary } from "@/components/query-state";
-import { formatInt, formatUsd } from "@/lib/format";
+import { OverviewStats } from "./overview-stats";
 import { OverviewPricing } from "./overview-pricing";
 import { ProviderHealthCard } from "./overview-providers";
+import { BreakdownChart } from "./usage/breakdown-chart";
 import { UsageChart } from "./usage/usage-chart";
-import { SummaryTable, summaryTotals } from "./usage/summary-table";
+import { SummaryTable } from "./usage/summary-table";
 
 const DAY_MS = 86_400_000;
 
 export function OverviewPage() {
+  const keys = useQuery({ queryKey: qk.keys, queryFn: api.keys });
   const summary = useQuery({
     queryKey: qk.usageSummary("model", "24h"),
     queryFn: () => api.usageSummary("model", Date.now() - DAY_MS),
     refetchInterval: 15_000,
   });
-  const totals = summary.data && summaryTotals(summary.data.data);
 
   return (
     <>
       <PageHeader title="Overview" description="What the router served in the last 24 hours." />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat
-          label="Requests"
-          icon={ActivityIcon}
-          value={totals ? formatInt(totals.requests) : "—"}
-        />
-        <Stat
-          label="Input tokens"
-          icon={ArrowDownToLineIcon}
-          value={totals ? formatInt(totals.input_tokens) : "—"}
-        />
-        <Stat
-          label="Output tokens"
-          icon={ArrowUpFromLineIcon}
-          value={totals ? formatInt(totals.output_tokens) : "—"}
-        />
-        <Stat
-          label="Cost"
-          icon={CircleDollarSignIcon}
-          value={totals ? formatUsd(totals.cost_usd) : "—"}
-          hint={
-            totals && totals.unpriced_requests > 0
-              ? `${formatInt(totals.unpriced_requests)} requests had no known price`
-              : undefined
-          }
-        />
-      </div>
+      <OverviewStats />
 
       <div className="grid gap-6">
         <UsageChart range="24h" />
+        <BreakdownChart keys={keys.data} range="24h" />
         <Panel title="Usage by model" description="Breakdown by routed upstream model." flush>
           <QueryBoundary
             query={summary}
