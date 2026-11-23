@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.27.1] — 2026-11-23
+
+Sync subscription providers with opencodex v2.100.6-52 (`9e0e298ef`) and oh-my-pi 19.1.0 (`a7135b8f31`).
+
+ChatGPT subscription: the Codex session is identified by `session-id` alone — the legacy `session_id` and `conversation_id` headers are no longer sent, as in oh-my-pi 19.1.0 (`x-client-request-id` and the per-turn metadata are unchanged); the user agent follows omp 19.1.0 (`omp/19.1.0`).
+
+Claude subscription, Antigravity and Kiro: no wire change. The four OAuth flows were re-verified and needed no change.
+
 ## [0.27.0] — 2026-11-20
 
 Sync subscription/OAuth providers with opencodex `d61cca122` (v2.100.6-2) and oh-my-pi `725f8c6f34` (19.0.1).
