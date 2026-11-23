@@ -117,10 +117,10 @@ export function requestHeaders(
   headers.set("originator", ORIGINATOR);
   headers.set("version", CLIENT_VERSION);
   headers.set("user-agent", USER_AGENT);
-  for (const name of ["conversation_id", "session_id", "x-client-request-id"]) {
-    if (sessionId) headers.set(name, sessionId);
-    else headers.delete(name);
-  }
+  // Since omp 19.1.0 the session rides `session-id` only (set from the identity below); the legacy
+  // `session_id` / `conversation_id` pair is no longer sent.
+  if (sessionId) headers.set("x-client-request-id", sessionId);
+  else headers.delete("x-client-request-id");
   headers.delete(HEADER.INSTALLATION_ID);
   for (const [name, value] of Object.entries(identity.headers)) headers.set(name, value);
   headers.delete("x-codex-turn-state");

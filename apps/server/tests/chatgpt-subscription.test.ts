@@ -897,13 +897,14 @@ describe("adapter", () => {
       "user-agent": USER_AGENT,
       accept: "text/event-stream",
       "content-type": "application/json",
-      session_id: "conv-1",
-      conversation_id: "conv-1",
       "session-id": "conv-1",
       "x-client-request-id": "conv-1",
       "x-codex-routing-hint": "model=gpt-5.6-sol",
     });
-    expect(USER_AGENT).toBe("omp/19.0.1");
+    // The legacy session pair is gone (omp 19.1.0): `session-id` alone carries the cache affinity.
+    expect(sent.headers.session_id).toBeUndefined();
+    expect(sent.headers.conversation_id).toBeUndefined();
+    expect(USER_AGENT).toBe("omp/19.1.0");
     // codex-rs (and omp since 18.17) sends `OpenAI-Beta` only on the WebSocket handshake: HTTP carries none.
     expect(sent.headers["openai-beta"]).toBeUndefined();
     expect(sent.headers["thread-id"]).toMatch(UUID);
@@ -960,8 +961,6 @@ describe("adapter", () => {
     expect(parsed.at(-1).usage.total_tokens).toBe(19);
     expect(up.calls[1]!.body.stream).toBe(true);
     // Without a cache key the session is fresh and the cache-affinity headers are left out, like omp.
-    expect(up.calls[1]!.headers.session_id).toBeUndefined();
-    expect(up.calls[1]!.headers.conversation_id).toBeUndefined();
     expect(up.calls[1]!.headers["x-client-request-id"]).toBeUndefined();
     expect(up.calls[1]!.headers["session-id"]).toMatch(UUID);
     expect(up.calls[1]!.body.prompt_cache_key).toBeUndefined();

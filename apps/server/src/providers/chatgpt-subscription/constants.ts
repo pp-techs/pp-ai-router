@@ -5,7 +5,7 @@
 /**
  * Every protocol constant of the ChatGPT sign-in and the Codex backend lives here. The OAuth client id
  * is the public identifier of the Codex CLI (not a user secret). The values are oh-my-pi's effective ones
- * at 725f8c6f34 (v19.0.1; the KDL auth rule and `wire/codex.ts` resolved), so a bump there is a bump here.
+ * at a7135b8f31 (v19.1.0; the KDL auth rule and `wire/codex.ts` resolved), so a bump there is a bump here.
  */
 export const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 export const AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize";
@@ -45,7 +45,7 @@ export const JWT_PROFILE_CLAIM = "https://api.openai.com/profile";
  */
 export const ORIGINATOR = "omp";
 export const CLIENT_VERSION = "0.169.0";
-export const OMP_VERSION = "19.0.1";
+export const OMP_VERSION = "19.1.0";
 export const USER_AGENT = `omp/${OMP_VERSION}`;
 
 /** `POST {base}/responses` for a base ending in `/codex`, `{base}/codex/responses` otherwise (omp `resolveCodexResponsesUrl`). */
