@@ -36,19 +36,27 @@ const VALUE_KEYS: Record<string, true> = {
 
 const FALLBACK_PATTERN_PROPERTY = ".*";
 
-/** Whether a regex uses a lookahead/lookbehind group, which the Responses API refuses in `pattern`s. */
-function hasLookaround(pattern: string): boolean {
-  let start = pattern.indexOf("(?");
-  while (start !== -1) {
-    let escapes = 0;
-    for (let i = start - 1; i >= 0 && pattern[i] === "\\"; i--) escapes++;
-    if (escapes % 2 === 0) {
-      const operator =
-        pattern[start + 2] === "<" ? pattern.slice(start + 2, start + 4) : pattern[start + 2];
+/**
+ * Whether the Responses API's regex validator rejects a `pattern` that ECMAScript accepts: a lookahead or
+ * lookbehind group, or an unescaped `[` inside a character class (a literal in ECMAScript, a nested class
+ * for OpenAI, which then reports the outer class as unclosed, e.g. `^[^[\]]*$`) (omp 19.1.1).
+ */
+function isUnsupportedRegex(pattern: string): boolean {
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const char = pattern[i];
+    if (char === "\\") {
+      i++;
+    } else if (inClass) {
+      if (char === "]") inClass = false;
+      else if (char === "[") return true;
+    } else if (char === "[") {
+      inClass = true;
+    } else if (char === "(" && pattern[i + 1] === "?") {
+      const operator = pattern[i + 2] === "<" ? pattern.slice(i + 2, i + 4) : pattern[i + 2];
       if (operator === "=" || operator === "!" || operator === "<=" || operator === "<!")
         return true;
     }
-    start = pattern.indexOf("(?", start + 2);
   }
   return false;
 }
@@ -63,7 +71,7 @@ function node(value: unknown): unknown {
     const child = value[key];
     // `oneOf` is rejected even without strict mode: it is re-emitted as `anyOf` below.
     if (key === "oneOf" && Array.isArray(child)) continue;
-    if (key === "pattern" && typeof child === "string" && hasLookaround(child)) continue;
+    if (key === "pattern" && typeof child === "string" && isUnsupportedRegex(child)) continue;
     if (key === "patternProperties" && isRecord(child)) output[key] = map(child, true);
     else if (MAP_KEYS[key] && isRecord(child)) output[key] = map(child, false);
     else if (ARRAY_KEYS[key] && Array.isArray(child)) output[key] = child.map(node);
@@ -91,12 +99,12 @@ function node(value: unknown): unknown {
   return Object.keys(output).length === 0 ? true : output;
 }
 
-/** A `{name: schema}` map; a pattern key with a lookaround is folded into a catch-all `.*` property. */
+/** A `{name: schema}` map; a pattern key the validator rejects is folded into a catch-all `.*` property. */
 function map(schemas: Json, patterns: boolean): Json {
   const output: Json = {};
   for (const key of Object.keys(schemas)) {
     const next = node(schemas[key]);
-    if (patterns && hasLookaround(key)) {
+    if (patterns && isUnsupportedRegex(key)) {
       const existing = output[FALLBACK_PATTERN_PROPERTY];
       if (existing === undefined) output[FALLBACK_PATTERN_PROPERTY] = next;
       else if (
@@ -115,7 +123,7 @@ function map(schemas: Json, patterns: boolean): Json {
 
 /**
  * A tool's parameter schema as the Responses API takes it: no `oneOf` (it becomes `anyOf`), every object
- * schema has `properties`, every array schema has `items` (open `true` when omitted), no lookaround regexes,
+ * schema has `properties`, every array schema has `items` (open `true` when omitted), no regexes the validator rejects (lookaround, nested `[` in a class),
  * and the empty schema is `true`. The parameters
  * themselves stay an object schema. Draft-07 to 2020-12 upgrading and strict-mode enforcement (omp's
  * `adaptSchemaForStrict`) are not ported.

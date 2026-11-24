@@ -534,6 +534,10 @@ describe("request translation", () => {
           pick: { oneOf: [{ type: "string" }, { type: "object" }] },
           any: {},
           code: { type: "string", pattern: "^(?=a)b$" },
+          // An unescaped `[` inside a class is a nested class for OpenAI's validator (omp 19.1.1).
+          nested: { type: "string", pattern: "^[^[\\]]*$" },
+          // An escaped `[`, a `[` in a class-free position and a plain class are accepted.
+          escaped: { type: "string", pattern: "^[\\[a-z]+\\[$" },
         },
       }),
     ).toEqual({
@@ -542,6 +546,8 @@ describe("request translation", () => {
         pick: { anyOf: [{ type: "string" }, { type: "object", properties: {} }] },
         any: true,
         code: { type: "string" },
+        nested: { type: "string" },
+        escaped: { type: "string", pattern: "^[\\[a-z]+\\[$" },
       },
     });
     expect(parameters({})).toEqual({ type: "object", properties: {} });
@@ -904,7 +910,7 @@ describe("adapter", () => {
     // The legacy session pair is gone (omp 19.1.0): `session-id` alone carries the cache affinity.
     expect(sent.headers.session_id).toBeUndefined();
     expect(sent.headers.conversation_id).toBeUndefined();
-    expect(USER_AGENT).toBe("omp/19.1.0");
+    expect(USER_AGENT).toBe("omp/19.1.1");
     // codex-rs (and omp since 18.17) sends `OpenAI-Beta` only on the WebSocket handshake: HTTP carries none.
     expect(sent.headers["openai-beta"]).toBeUndefined();
     expect(sent.headers["thread-id"]).toMatch(UUID);
