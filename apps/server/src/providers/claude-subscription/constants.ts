@@ -144,5 +144,15 @@ export const CLAUDE_CODE_HEADERS: Readonly<Record<string, string>> = {
   "X-Stainless-Runtime-Version": NODE_RUNTIME_VERSION,
 };
 
-/** Sent with a token refresh, as the SDK's OAuth provider does (and not with the code exchange). */
-export const REFRESH_USER_AGENT = `anthropic-sdk-typescript/${SDK_VERSION} userOAuthProvider`;
+/**
+ * Claude Code renews every login at its one `TOKEN_URL` (omp's refresh rule, 19.2.1): on `platform.claude.com`,
+ * through axios, whose defaults supply the `Accept` and `User-Agent` headers (the login's code exchange stays on
+ * `api.anthropic.com` and sends neither).
+ */
+export const REFRESH_URL = "https://platform.claude.com/v1/oauth/token";
+/** `axios` version bundled by Claude Code 2.1.332 (omp `claudeCodeAxiosVersion`). */
+export const AXIOS_VERSION = "1.15.2";
+export const REFRESH_USER_AGENT = `axios/${AXIOS_VERSION}`;
+/** Claude Code's refresh scope set; `org:create_api_key` is login-only. */
+export const REFRESH_SCOPES =
+  "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload user:plugins";

@@ -17,6 +17,8 @@ import {
   ORG_NAME_KEY,
   ORG_UUID_KEY,
   REDIRECT_URI,
+  REFRESH_SCOPES,
+  REFRESH_URL,
   REFRESH_USER_AGENT,
   REQUEST_TIMEOUT_MS,
   SCOPES,
@@ -36,34 +38,19 @@ export interface LoginState {
 }
 
 /**
- * omp's `isOAuthExpiry` (error/flags.ts): a refresh failure whose text says the grant or the client is dead,
- * or a bare 401, as opposed to a passing outage. The text is the status and the start of the answer body.
- */
-const DEFINITIVE_FAILURE =
-  /invalid_grant|invalid_token|unauthorized_client|\brevoked\b|refresh[\s_]?token.*expired/i;
-const TRANSIENT_FAILURE =
-  /timeout|network|fetch failed|ECONN(?:REFUSED|RESET)|ETIMEDOUT|ETIMEOUT|ENOTFOUND|ENETUNREACH|EHOSTUNREACH|FailedToOpenSocket|EAI_AGAIN|socket hang up|\b(?:408|425|429|5\d{2})\b|rate.?limit|too many requests|temporar|unavailable|forbidden|permission_denied|cloudflare|captcha/i;
-
-/** Whether a refresh failure with this text means the stored grant is gone for good. */
-const refusesForGood = (evidence: string) =>
-  DEFINITIVE_FAILURE.test(evidence) ||
-  (/\b401\b/.test(evidence) && !TRANSIENT_FAILURE.test(evidence));
-
-/**
- * Token endpoint failure; `code` is the OAuth `error`. The answer body is classified but never kept in the
- * message: it carries grant details.
+ * Token endpoint failure; `code` and `description` are the OAuth `error` and `error_description`. The answer
+ * body is never kept in the message: it carries grant details.
  */
 class TokenEndpointError extends Error {
   readonly status: number;
   readonly code: string | undefined;
-  /** What `refusesForGood` reads: the status and the start of the answer body. */
-  readonly evidence: string;
+  readonly description: string | undefined;
 
-  constructor(status: number, code: string | undefined, body: string) {
+  constructor(status: number, code: string | undefined, description: string | undefined) {
     super(`Anthropic token request failed: ${status}${code ? ` (${code})` : ""}`);
     this.status = status;
     this.code = code;
-    this.evidence = `anthropic token refresh failed: ${status} ${body.slice(0, 500)}`;
+    this.description = description;
   }
 }
 
@@ -103,10 +90,11 @@ export function createClaudeSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvid
   const now = deps.now ?? Date.now;
 
   async function postToken(
+    url: string,
     body: Record<string, string>,
     extraHeaders: Record<string, string> = {},
   ): Promise<Record<string, unknown>> {
-    const res = await doFetch(TOKEN_URL, {
+    const res = await doFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json", ...extraHeaders },
       body: JSON.stringify(body),
@@ -122,7 +110,14 @@ export function createClaudeSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvid
         return undefined;
       }
     })();
-    if (!res.ok) throw new TokenEndpointError(res.status, errorCode(payload), answer);
+    if (!res.ok) {
+      const description = isRecord(payload) ? payload.error_description : undefined;
+      throw new TokenEndpointError(
+        res.status,
+        errorCode(payload),
+        typeof description === "string" ? description : undefined,
+      );
+    }
     if (!isRecord(payload)) throw new Error("Anthropic token response was not a JSON object");
     return payload;
   }
@@ -269,7 +264,7 @@ export function createClaudeSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvid
       if ((parsed.kind !== "raw" || parsed.state !== undefined) && parsed.state !== session.state) {
         throw new Error("OAuth state mismatch: paste the URL from the sign-in you just started");
       }
-      const payload = await postToken({
+      const payload = await postToken(TOKEN_URL, {
         grant_type: "authorization_code",
         client_id: CLIENT_ID,
         code: parsed.code,
@@ -282,22 +277,48 @@ export function createClaudeSubscriptionOAuth(deps: OAuthDeps = {}): OAuthProvid
     },
 
     async refresh(tokens) {
-      if (!tokens.refreshToken) {
+      const { refreshToken } = tokens;
+      if (!refreshToken) {
         throw new OAuthRefreshError("Anthropic account has no refresh token", true);
       }
-      let payload: Record<string, unknown>;
-      try {
-        payload = await postToken(
+      const exchange = (scope: string | undefined) =>
+        postToken(
+          REFRESH_URL,
           {
             grant_type: "refresh_token",
             client_id: CLIENT_ID,
-            refresh_token: tokens.refreshToken,
+            refresh_token: refreshToken,
+            ...(scope === undefined ? {} : { scope }),
           },
-          // The SDK sends these on a refresh but not on the code exchange.
-          { "anthropic-beta": OAUTH_BETA, "user-agent": REFRESH_USER_AGENT },
+          // Claude Code renews through axios, whose defaults supply these (omp 19.2.1); the code exchange sends neither.
+          { accept: "application/json, text/plain, */*", "user-agent": REFRESH_USER_AGENT },
         );
+      let payload: Record<string, unknown>;
+      try {
+        try {
+          payload = await exchange(REFRESH_SCOPES);
+        } catch (error) {
+          // A grant issued before a requested scope existed is refused whole; omitting `scope` reissues the
+          // scopes it already holds (RFC 6749 §6, as omp does).
+          if (
+            !(
+              error instanceof TokenEndpointError &&
+              error.status === 400 &&
+              error.code === "invalid_scope"
+            )
+          )
+            throw error;
+          payload = await exchange(undefined);
+        }
       } catch (error) {
-        const terminal = error instanceof TokenEndpointError && refusesForGood(error.evidence);
+        // omp's `dead-grant "invalid_grant" except-description="account_on_hold"`: Claude Code ends a login only
+        // when the endpoint refuses the grant itself (RFC 6749: a grant with 400, a client with 401), and a held
+        // account can appeal. Every other failure (outage, rate limit, another code, a bare 401) keeps the grant.
+        const terminal =
+          error instanceof TokenEndpointError &&
+          (error.status === 400 || error.status === 401) &&
+          error.code === "invalid_grant" &&
+          error.description !== "account_on_hold";
         throw new OAuthRefreshError((error as Error).message, terminal, { cause: error });
       }
       let refreshed: PayloadTokens;

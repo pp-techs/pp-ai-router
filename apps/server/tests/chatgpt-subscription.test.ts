@@ -910,7 +910,7 @@ describe("adapter", () => {
     // The legacy session pair is gone (omp 19.1.0): `session-id` alone carries the cache affinity.
     expect(sent.headers.session_id).toBeUndefined();
     expect(sent.headers.conversation_id).toBeUndefined();
-    expect(USER_AGENT).toBe("omp/19.1.1");
+    expect(USER_AGENT).toBe("omp/19.2.1");
     // codex-rs (and omp since 18.17) sends `OpenAI-Beta` only on the WebSocket handshake: HTTP carries none.
     expect(sent.headers["openai-beta"]).toBeUndefined();
     expect(sent.headers["thread-id"]).toMatch(UUID);

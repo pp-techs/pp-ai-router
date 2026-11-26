@@ -248,14 +248,25 @@ export function resolveWireModel(
   return { wireModelId: aliased };
 }
 
-/** Flash generations whose backend rejects the Claude-Agent identity paragraph with a misleading 429. */
-const CLAUDE_SDK_PARAGRAPH_REJECTORS = new Set(["gemini-3.7-flash", "gemini-3.8-flash"]);
+/**
+ * Generations whose backend answers a misleading 429 RESOURCE_EXHAUSTED when the stock Claude Code / Agent SDK
+ * phrases survive into `systemInstruction`, and 200 with them stripped or reworded (probe-established per
+ * generation, opencodex 414faafff): 3.7 and 3.8 Flash, and Gemini 4 Neon. A new generation is added only
+ * after that probe.
+ */
+const CLAUDE_SDK_PARAGRAPH_REJECTORS = new Set([
+  "gemini-3.7-flash",
+  "gemini-3.8-flash",
+  "gemini-4-neon",
+]);
 
 /** Judged on the routed wire id AND the selector: a retired id and a collapsed base reach the same generation. */
 export function rejectsClaudeSdkParagraph(modelId: string, wireModelId: string): boolean {
   return [wireModelId, modelId].some((id) =>
     CLAUDE_SDK_PARAGRAPH_REJECTORS.has(
-      id.replace(/-tiered$/, "").replace(/^(gemini-3\.8-flash)-(low|medium|high)$/, "$1"),
+      id
+        .replace(/-tiered$/, "")
+        .replace(/^(gemini-3\.8-flash|gemini-4-neon)-(low|medium|high)$/, "$1"),
     ),
   );
 }
