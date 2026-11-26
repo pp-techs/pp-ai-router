@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- `bun run version-packages` adds each release's section from its changesets; edit it in the Version Packages PR. -->
 
+## [0.27.2] — 2026-11-26
+
+Bump hono, @hono/node-server, @tanstack/react-query, lucide-react, recharts and vite-plus (1.7.0, with vite-plus-core 8.3.8000).
+
+Sync subscription providers with opencodex v2.100.6-52 (`9e0e298ef`, no new commits) and oh-my-pi 19.1.1 (`31ffee513f`).
+
+ChatGPT subscription: a tool schema `pattern` (or `patternProperties` key) with an unescaped `[` inside a character class, such as `^[^[\]]*# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+, is now dropped like the lookaround patterns already were — OpenAI's validator reads it as a nested class and refuses the whole request; the user agent follows omp 19.1.1 (`omp/19.1.1`).
+
+Claude subscription, Antigravity and Kiro: no wire change. The four OAuth flows were re-verified and needed no change.
+
+Sync subscription providers with opencodex v2.100.6-111 (`8ef15263e`) and oh-my-pi 19.2.1 (`b55cd1bb66`).
+
+Claude subscription: a token refresh now follows Claude Code as oh-my-pi 19.2 mirrors it — `POST https://platform.claude.com/v1/oauth/token` with axios's default `Accept` / `User-Agent: axios/1.15.2` (no SDK identity or beta), Claude Code's scope set in the request (a grant that predates one of those scopes is retried once without `scope` after `invalid_scope`), and a login is retired only when the endpoint answers `invalid_grant` with HTTP 400/401, except `account_on_hold` (a held account can appeal). Any other failure — an outage, another error code, a bare 401, "refresh token expired" wording — keeps the login and only cools the account down, where before such text could retire it. The code exchange at sign-in is unchanged.
+
+Antigravity: `gemini-4-neon` (and its tiers) now has the stock Claude Code phrases that make Cloud Code Assist answer a bare 429 stripped or reworded, as 3.7 and 3.8 Flash already did: the Claude Code / Agent SDK identity paragraphs and two reworded sentences (opencodex `414faafff`).
+
+ChatGPT subscription: the user agent follows omp 19.2.1 (`omp/19.2.1`). Kiro: no wire change. The ChatGPT, Antigravity and Kiro OAuth rules were re-verified and needed no change.
+
 ## [0.27.1] — 2026-11-23
 
 Sync subscription providers with opencodex v2.100.6-52 (`9e0e298ef`) and oh-my-pi 19.1.0 (`a7135b8f31`).
