@@ -10,8 +10,9 @@ import {
   BOOTSTRAP_URL,
   CLIENT_ID,
   EFFORT_BETA,
-  OAUTH_BETA,
   REDIRECT_URI,
+  REFRESH_SCOPES,
+  REFRESH_URL,
   SCOPES,
   SYSTEM_INSTRUCTION,
   TOKEN_URL,
@@ -124,7 +125,7 @@ function fakeTokenEndpoint(validTokens: Set<string>) {
         },
       });
     }
-    if (url !== TOKEN_URL) return fetch(input, init);
+    if (url !== TOKEN_URL && url !== REFRESH_URL) return fetch(input, init);
     calls.push(JSON.parse(String(init?.body as string)) as Record<string, string>);
     headers.push(new Headers(init?.headers));
     const failure = failures.shift();
@@ -570,34 +571,59 @@ describe("token lifecycle", () => {
     expect((await s.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
   });
 
-  it("reads a refusal like omp: a dead-grant message or a bare 401 is final, a 401 that smells of an outage is not", async () => {
-    const s = await setup();
-    await s.login();
-    s.token.failures.push(
-      Response.json(
-        { error: "invalid_request", error_description: "Refresh token expired" },
-        { status: 400 },
+  it("ends a login only when the endpoint refuses the grant itself, like omp's dead-grant rule", async () => {
+    const refuse = async (response: Response) => {
+      const s = await setup();
+      await s.login();
+      s.token.failures.push(response);
+      s.h.clock.now += HOUR;
+      expect((await chat(s, {})).status).toBeGreaterThanOrEqual(500);
+      return (await s.h.admin("GET", "/providers/sub/credentials")).json.data[0].status;
+    };
+    // A grant refusal is final, whichever of 400 (grant) or 401 (client) carries it.
+    expect(await refuse(Response.json({ error: "invalid_grant" }, { status: 400 }))).toBe("dead");
+    expect(await refuse(Response.json({ error: "invalid_grant" }, { status: 401 }))).toBe("dead");
+    // A held account can appeal, so it keeps its login.
+    expect(
+      await refuse(
+        Response.json(
+          { error: "invalid_grant", error_description: "account_on_hold" },
+          { status: 400 },
+        ),
       ),
-    );
-    s.h.clock.now += HOUR;
-    expect((await chat(s, {})).status).toBeGreaterThanOrEqual(500);
-    expect((await s.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
-
-    const t = await setup();
-    await t.login();
-    t.token.failures.push(new Response("cloudflare: temporarily unavailable", { status: 401 }));
-    t.h.clock.now += HOUR;
-    expect((await chat(t, {})).status).toBeGreaterThanOrEqual(500);
-    expect((await t.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe(
+    ).toBe("active");
+    // Everything else leaves the grant standing: another code, a bare 401, an outage, expiry wording.
+    expect(
+      await refuse(
+        Response.json(
+          { error: "invalid_request", error_description: "Refresh token expired" },
+          { status: 400 },
+        ),
+      ),
+    ).toBe("active");
+    expect(await refuse(Response.json({ error: "whatever" }, { status: 401 }))).toBe("active");
+    expect(await refuse(new Response("cloudflare: temporarily unavailable", { status: 401 }))).toBe(
       "active",
     );
+  });
 
-    const u = await setup();
-    await u.login();
-    u.token.failures.push(Response.json({ error: "whatever" }, { status: 401 }));
-    u.h.clock.now += HOUR;
-    expect((await chat(u, {})).status).toBeGreaterThanOrEqual(500);
-    expect((await u.h.admin("GET", "/providers/sub/credentials")).json.data[0].status).toBe("dead");
+  it("renews on platform.claude.com with Claude Code's scope set, and without scope when the grant predates one", async () => {
+    const s = await setup();
+    await s.login();
+    // The grant is refused whole for a scope it was issued before: one more request, no `scope`.
+    s.token.failures.push(Response.json({ error: "invalid_scope" }, { status: 400 }));
+    s.h.clock.now += HOUR;
+    expect((await chat(s, {})).status).toBe(200);
+    const [asked, retried] = s.token.calls.slice(-2);
+    expect(asked).toMatchObject({ grant_type: "refresh_token", scope: REFRESH_SCOPES });
+    expect(retried).toMatchObject({ grant_type: "refresh_token", refresh_token: "rt-1" });
+    expect(retried).not.toHaveProperty("scope");
+    // Any other 400 is not retried.
+    s.token.failures.push(Response.json({ error: "invalid_request" }, { status: 400 }));
+    s.h.clock.now += HOUR;
+    const before = s.token.calls.length;
+    expect((await chat(s, {})).status).toBeGreaterThanOrEqual(500);
+    expect(s.token.calls).toHaveLength(before + 1);
   });
 });
 
@@ -822,8 +848,12 @@ describe("account identity", () => {
       ...tokens,
       extra: { ...tokens.extra, organization_uuid: "o-login", organization_name: "Login Org" },
     };
+    let refreshUrl = "";
+    let refreshBody: Record<string, string> = {};
     const refreshed = await createClaudeSubscriptionOAuth({
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
+        refreshUrl = input instanceof Request ? input.url : input.toString();
+        refreshBody = JSON.parse(String(init?.body as string)) as Record<string, string>;
         s.tokenHeaders.push(new Headers(init?.headers));
         return Response.json({
           access_token: "at2",
@@ -835,8 +865,12 @@ describe("account identity", () => {
       },
     }).refresh(pinned);
     const sent = s.tokenHeaders[1]!;
-    expect(sent.get("anthropic-beta")).toBe(OAUTH_BETA);
-    expect(sent.get("user-agent")).toMatch(/^anthropic-sdk-typescript\/\S+ userOAuthProvider$/);
+    // Claude Code renews through axios on platform.claude.com: its default headers, no SDK identity or beta.
+    expect(refreshUrl).toBe(REFRESH_URL);
+    expect(refreshBody.scope).toBe(REFRESH_SCOPES);
+    expect(sent.get("accept")).toBe("application/json, text/plain, */*");
+    expect(sent.get("user-agent")).toMatch(/^axios\/\d+\.\d+\.\d+$/);
+    expect(sent.get("anthropic-beta")).toBeNull();
     expect(refreshed.extra).toMatchObject({
       organization_uuid: "o-login",
       organization_name: "Login Org",
